@@ -119,9 +119,19 @@ public:
      */
     void updateAll(const Element& elem)
     {
-        asImp_().updateStencil(elem);
-        asImp_().updateAllIntensiveQuantities();
-        asImp_().updateAllExtensiveQuantities();
+        bool reuse = simulator().reuseResidualandJacobians();
+
+        if (!reuse) {
+            updateStencil(elem);
+            updateAllIntensiveQuantities();
+            updateAllExtensiveQuantities();
+        } else {
+            // for reuse we only need to re-calculate
+            // the storage term and we therefore
+            // don't need the extensive quantities
+            updatePrimaryStencil(elem);
+            updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
+        }
     }
 
     /*!

@@ -164,14 +164,18 @@ public:
 
         residual = 0.0;
 
-        // evaluate the flux terms
-        asImp_().evalFluxes(residual, elemCtx, /*timeIdx=*/0);
-
         // evaluate the storage and the source terms
         asImp_().evalVolumeTerms_(residual, elemCtx);
 
-        // evaluate the boundary conditions
-        asImp_().evalBoundary_(residual, elemCtx, /*timeIdx=*/0);
+        const auto& sim = elemCtx.simulator();
+        if (!sim.reuseResidualandJacobians())
+        {
+        	// evaluate the flux terms
+        	asImp_().evalFluxes(residual, elemCtx, /*timeIdx=*/0);
+
+        	// evaluate the boundary conditions
+        	asImp_().evalBoundary_(residual, elemCtx, /*timeIdx=*/0);
+	}
 
         if (useVolumetricResidual) {
             // make the residual volume specific (i.e., make it incorrect mass per cubic
@@ -474,7 +478,9 @@ protected:
 
         tmp = 0.0;
         tmp2 = 0.0;
+        const auto& sim = elemCtx.simulator();
 
+        bool reuse = sim.reuseResidualandJacobians();
         // evaluate the volumetric terms (storage + source terms)
         size_t numPrimaryDof = elemCtx.numPrimaryDof(/*timeIdx=*/0);
         for (unsigned dofIdx=0; dofIdx < numPrimaryDof; dofIdx++) {
@@ -498,6 +504,23 @@ protected:
             else
                 asImp_().computeStorage(tmp, elemCtx, dofIdx, /*timeIdx=*/0);
             Opm::Valgrind::CheckDefined(tmp);
+
+            if (reuse) {
+                const auto& model = elemCtx.model();
+                // remove contribution from privious time step;
+                EvalVector tmpPrivious = tmp;
+                unsigned globalDofIdx = elemCtx.globalSpaceIndex(dofIdx, /*timeIdx=*/0);
+                const EqVector& tmp2Privious = model.cachedStorage(globalDofIdx, /*timeIdx=*/1);
+                for (unsigned eqIdx = 0; eqIdx < numEq; ++eqIdx) {
+                    tmpPrivious[eqIdx] -= tmp2Privious[eqIdx];
+                    tmpPrivious[eqIdx] *= scvVolume / sim.priviousTimeStepSize() ;
+                    //std::cout << "remove from residual " << globalDofIdx << " " << eqIdx << " "<< std::endl;
+                    //tmpPrivious[eqIdx].print();
+                    //std::cout << std::endl;
+                    residual[dofIdx][eqIdx] -= tmpPrivious[eqIdx];
+                    //std::cout << residual[dofIdx][eqIdx] << std::endl;
+                }
+            }
 
             if (elemCtx.enableStorageCache()) {
                 const auto& model = elemCtx.model();
@@ -536,8 +559,13 @@ protected:
             for (unsigned eqIdx = 0; eqIdx < numEq; ++eqIdx) {
                 tmp[eqIdx] -= tmp2[eqIdx];
                 tmp[eqIdx] *= scvVolume / elemCtx.simulator().timeStepSize();
+                //unsigned globalDofIdx = elemCtx.globalSpaceIndex(dofIdx, /*timeIdx=*/0);
+                //std::cout << "add to residual " <<globalDofIdx << " " << eqIdx <<  " " << tmp2[eqIdx] << std::endl;
+                //tmp[eqIdx].print();
+                //std::cout << std::endl;
 
                 residual[dofIdx][eqIdx] += tmp[eqIdx];
+                //std::cout << residual[dofIdx][eqIdx] << std::endl;
             }
 
             Opm::Valgrind::CheckDefined(residual[dofIdx]);

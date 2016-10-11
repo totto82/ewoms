@@ -328,7 +328,17 @@ public:
      * \param timeStepSize The new value for the time step size \f$\mathrm{[s]}\f$
      */
     void setTimeStepSize(Scalar value)
-    { timeStepSize_ = value; }
+    {
+        timeStepSize_ = value;
+    }
+
+    void setPriviousTimeStepSize(Scalar value)
+    { priviousTimeStepSize_ = value; }
+
+    Scalar priviousTimeStepSize() const
+    {
+        return priviousTimeStepSize_;
+    }
 
     /*!
      * \brief Set the current time step index to a given value.
@@ -514,6 +524,14 @@ public:
         return std::max<Scalar>(0.0,
                                 (episodeStartTime() + episodeLength())
                                 - (this->time() + this->startTime()));
+    }
+
+    bool reuseResidualandJacobians() const {
+        return reuseResidualandJacobians_;
+    }
+
+    void setReuseResidualandJacobians(bool reuse) {
+        reuseResidualandJacobians_ = reuse;
     }
 
     /*
@@ -868,10 +886,12 @@ private:
     Scalar endTime_;
 
     Scalar timeStepSize_;
+    Scalar priviousTimeStepSize_;
     int timeStepIdx_;
 
     bool finished_;
     bool verbose_;
+    bool reuseResidualandJacobians_;
 };
 } // namespace Ewoms
 

@@ -385,7 +385,10 @@ private:
     // linearize the whole system
     void linearize_()
     {
-        resetSystem_();
+
+        if (!simulator_().reuseResidualandJacobians())
+            resetSystem_();
+
 
         // before the first iteration of each time step, we need to update the
         // constraints. (i.e., we assume that constraints can be time dependent, but they
@@ -395,7 +398,7 @@ private:
 
         applyConstraintsToSolution_();
 
-        *matrix_ = 0.0;
+        //*matrix_ = 0.0;
 
         // relinearize the elements...
         ThreadedEntityIterator<GridView, /*codim=*/0> threadedElemIt(gridView_());
