@@ -29,6 +29,7 @@
 #define EWOMS_BLACK_OIL_PRIMARY_VARIABLES_HH
 
 #include "blackoilproperties.hh"
+#include "blackoilsolventmodules.hh"
 
 #include <ewoms/disc/common/fvbaseprimaryvariables.hh>
 
@@ -41,6 +42,9 @@
 #include <opm/common/Valgrind.hpp>
 
 namespace Ewoms {
+template <class TypeTag, unsigned numSolventsV>
+class BlackOilSolventModule;
+
 /*!
  * \ingroup BlackOilModel
  *
@@ -76,12 +80,14 @@ class BlackOilPrimaryVariables : public FvBasePrimaryVariables<TypeTag>
 
     // component indices from the fluid system
     enum { numComponents = GET_PROP_VALUE(TypeTag, NumComponents) };
+    enum { numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents) };
     enum { gasCompIdx = FluidSystem::gasCompIdx };
     enum { waterCompIdx = FluidSystem::waterCompIdx };
     enum { oilCompIdx = FluidSystem::oilCompIdx };
 
     typedef typename Opm::MathToolbox<Evaluation> Toolbox;
     typedef Dune::FieldVector<Scalar, numComponents> ComponentVector;
+    typedef BlackOilSolventModule<TypeTag, numSolvents> SolventModule;
 
     static_assert(numPhases == 3, "The black-oil model assumes three phases!");
     static_assert(numComponents == 3, "The black-oil model assumes three components!");
@@ -224,6 +230,18 @@ public:
         assignNaive(fsFlash);
     }
 
+    template <class FluidState, class SolventContainer>
+    void assignMassConservative(const FluidState& fluidState,
+                                const MaterialLawParams& matParams,
+                                const SolventContainer& solventPrimaryVars,
+                                bool isInEquilibrium = false)
+    {
+        assignMassConservative(fluidState, matParams, isInEquilibrium);
+
+        // set the primary variables of the solvent module
+        SolventModule::assignPrimaryVars(*this, solventPrimaryVars);
+    }
+
     /*!
      * \copydoc ImmisciblePrimaryVariables::assignNaive
      */
@@ -281,6 +299,15 @@ public:
             (*this)[pressureSwitchIdx] = FsToolbox::value(fluidState.pressure(gasPhaseIdx));
             (*this)[compositionSwitchIdx] = Rv;
         }
+    }
+
+    template <class FluidState, class SolventContainer>
+    void assignNaive(const FluidState& fluidState, const SolventContainer& solventPrimaryVars)
+    {
+        assignNaive(fluidState);
+
+        // set the primary variables of the solvent module
+        SolventModule::assignPrimaryVars(*this, solventPrimaryVars);
     }
 
     /*!

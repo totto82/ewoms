@@ -40,6 +40,8 @@ NEW_PROP_TAG(EnableEclipseOutput);
 NEW_PROP_TAG(HeatConductionLaw);
 //! The parameters of the material law for heat conduction
 NEW_PROP_TAG(HeatConductionLawParams);
+//! The number of additional solvent components
+NEW_PROP_TAG(NumSolvents);
 }} // namespace Properties, Ewoms
 
 #endif

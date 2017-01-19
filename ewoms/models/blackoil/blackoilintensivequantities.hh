@@ -30,6 +30,7 @@
 
 #include "blackoilproperties.hh"
 #include "blackoilfluidstate.hh"
+#include "blackoilsolventmodules.hh"
 
 #include <opm/material/fluidstates/CompositionalFluidState.hpp>
 #include <opm/common/Valgrind.hpp>
@@ -51,6 +52,7 @@ template <class TypeTag>
 class BlackOilIntensiveQuantities
     : public GET_PROP_TYPE(TypeTag, DiscIntensiveQuantities)
     , public GET_PROP_TYPE(TypeTag, FluxModule)::FluxIntensiveQuantities
+    , public BlackOilSolventIntensiveQuantities<TypeTag>
 {
     typedef typename GET_PROP_TYPE(TypeTag, DiscIntensiveQuantities) ParentType;
 
@@ -77,6 +79,7 @@ class BlackOilIntensiveQuantities
     typedef Opm::MathToolbox<Evaluation> Toolbox;
     typedef Dune::FieldMatrix<Scalar, dimWorld, dimWorld> DimMatrix;
     typedef typename FluxModule::FluxIntensiveQuantities FluxIntensiveQuantities;
+    typedef BlackOilSolventIntensiveQuantities<TypeTag> SolventIntensiveQuantities;
     typedef Ewoms::BlackOilFluidState<TypeTag> FluidState;
 
 public:
@@ -286,6 +289,8 @@ public:
             Evaluation x = rockCompressibility*(fluidState_.pressure(oilPhaseIdx) - rockRefPressure);
             porosity_ *= 1.0 + x + 0.5*x*x;
         }
+
+        SolventIntensiveQuantities::update_(elemCtx, dofIdx, timeIdx);
 
         // update the quantities which are required by the chosen
         // velocity model

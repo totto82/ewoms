@@ -248,6 +248,7 @@ class EclProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     enum { numEq = GET_PROP_VALUE(TypeTag, NumEq) };
     enum { numPhases = FluidSystem::numPhases };
     enum { numComponents = FluidSystem::numComponents };
+    enum { numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents) };
     enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
     enum { oilPhaseIdx = FluidSystem::oilPhaseIdx };
     enum { waterPhaseIdx = FluidSystem::waterPhaseIdx };
@@ -799,10 +800,13 @@ public:
 
         if (useMassConservativeInitialCondition_) {
             const auto& matParams = materialLawParams(context, spaceIdx, timeIdx);
-            values.assignMassConservative(initialFluidStates_[globalDofIdx], matParams);
+            Dune::FieldVector<Scalar, numSolvents> solventPv(0.0);
+            values.assignMassConservative(initialFluidStates_[globalDofIdx], matParams, solventPv);
         }
-        else
-            values.assignNaive(initialFluidStates_[globalDofIdx]);
+        else {
+            Dune::FieldVector<Scalar, numSolvents> solventPv(0.0);
+            values.assignNaive(initialFluidStates_[globalDofIdx], solventPv);
+        }
     }
 
     /*!

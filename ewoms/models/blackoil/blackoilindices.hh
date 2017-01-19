@@ -35,17 +35,23 @@ namespace Ewoms {
  *
  * \brief The primary variable and equation indices for the black-oil model.
  */
-template <int PVOffset = 0>
+template <unsigned numSolventsV, unsigned PVOffset>
 struct BlackOilIndices
 {
+    //! Number of solvent components considered
+    static const int numSolvents = numSolventsV;
+
+    //! The number of equations
+    static const int numEq = 3 + numSolvents;
+
+    ////////
     // Primary variable indices
+    ////////
 
     //! The index of the water saturation
     static const int waterSaturationIdx  = PVOffset + 0;
 
-    /*!
-     * \brief Index of the oil pressure in a vector of primary variables
-     */
+    //! Index of the oil pressure in a vector of primary variables
     static const int pressureSwitchIdx  = PVOffset + 1;
 
     /*!
@@ -58,14 +64,21 @@ struct BlackOilIndices
      */
     static const int compositionSwitchIdx = PVOffset + 2;
 
-    // indices of the equations
+    //! Index of the primary variable for the first solvent
+    static const int solvent0PrimaryVarIdx  = PVOffset + 3;
+    // numSolvents-1 primary variables follow
+
+    ////////
+    // Equation indices
+    ////////
 
     //! Index of the continuity equation of the first phase
     static const int conti0EqIdx = PVOffset + 0;
-    // numPhases - 1 continuity equations follow
+    // two continuity equations follow
 
-    //! The number of equations
-    static const int numEq = 3;
+    //! Index of the continuity equation for the first solvent component
+    static const int contiSolvent0EqIdx = PVOffset + 3;
+    // numSolvents-1 continuity equations follow
 };
 
 } // namespace Ewoms
