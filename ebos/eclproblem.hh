@@ -222,6 +222,8 @@ SET_BOOL_PROP(EclBaseProblem, EnableDebuggingChecks, true);
 
 // ebos handles the SWATINIT keyword by default
 SET_BOOL_PROP(EclBaseProblem, EnableSwatinit, true);
+
+SET_INT_PROP(EclBaseProblem, NumSolvents, 1);
 } // namespace Properties
 
 /*!
@@ -860,6 +862,11 @@ public:
                 unsigned timeIdx) const
     {
         rate = 0.0;
+
+        typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
+        unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+        if (globalDofIdx < 100)
+            rate[Indices::contiSolvent0EqIdx] = 1.0; // mol/m^3/s
 
         if (!GET_PROP_VALUE(TypeTag, DisableWells)) {
             wellManager_.computeTotalRatesForDof(rate, context, spaceIdx, timeIdx);

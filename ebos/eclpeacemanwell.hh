@@ -449,7 +449,7 @@ public:
             // rate for each component as its first conservation equations, but we
             // require the black-oil model for now anyway, so this should not be too much
             // of a problem...
-            assert(numModelEq == numComponents);
+            //assert(numModelEq == numComponents);
             Opm::Valgrind::CheckDefined(q);
             auto& matrixEntry = matrix[gridDofIdx][wellGlobalDofIdx];
             matrixEntry = 0.0;
