@@ -270,6 +270,7 @@ class EclProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     typedef typename GET_PROP_TYPE(TypeTag, MaterialLawParams) MaterialLawParams;
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
 
+    typedef BlackOilSolventModule<TypeTag> SolventModule;
     typedef Opm::CompositionalFluidState<Scalar, FluidSystem> ScalarFluidState;
     typedef Opm::MathToolbox<Evaluation> Toolbox;
     typedef Ewoms::EclSummaryWriter<TypeTag> EclSummaryWriter;
@@ -318,6 +319,10 @@ public:
     {
         // add the output module for the Ecl binary output
         simulator.model().addOutputModule(new Ewoms::EclOutputBlackOilModule<TypeTag>(simulator));
+
+        // Tell the solvent module to initialize its internal data structures
+        const auto& gridManager = simulator.gridManager();
+        SolventModule::initFromDeck(gridManager.deck(), gridManager.eclState());
     }
 
     /*!

@@ -67,6 +67,7 @@ namespace Properties {
 //! The type tag for the black-oil problems
 NEW_TYPE_TAG(BlackOilModel, INHERITS_FROM(MultiPhaseBaseModel,
                                           VtkBlackOil,
+                                          VtkBlackOilSolvent,
                                           VtkComposition));
 
 //! Set the local residual function
@@ -515,7 +516,7 @@ protected:
         ParentType::registerOutputModules_();
 
         // add the VTK output modules which make sense for the blackoil model
-        SolventModule::registerOutputModules(*this);
+        SolventModule::registerOutputModules(*this, this->simulator_);
         this->addOutputModule(new Ewoms::VtkBlackOilModule<TypeTag>(this->simulator_));
         this->addOutputModule(new Ewoms::VtkCompositionModule<TypeTag>(this->simulator_));
     }

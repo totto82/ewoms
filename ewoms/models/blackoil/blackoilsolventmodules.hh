@@ -29,6 +29,12 @@
 #define EWOMS_BLACK_OIL_SOLVENT_MODULE_HH
 
 #include "blackoilproperties.hh"
+#include <ewoms/io/vtkblackoilsolventmodule.hh>
+
+#if HAVE_OPM_PARSER
+#include <opm/parser/eclipse/Deck/Deck.hpp>
+#include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
+#endif
 
 #include <opm/common/Valgrind.hpp>
 #include <opm/common/Unused.hpp>
@@ -55,6 +61,7 @@ class BlackOilSolventModule
     typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) ExtensiveQuantities;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, Model) Model;
+    typedef typename GET_PROP_TYPE(TypeTag, Simulator) Simulator;
     typedef typename GET_PROP_TYPE(TypeTag, EqVector) EqVector;
     typedef typename GET_PROP_TYPE(TypeTag, RateVector) RateVector;
     typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
@@ -68,20 +75,52 @@ class BlackOilSolventModule
     static constexpr unsigned numPhases = FluidSystem::numPhases;
 
 public:
+#if HAVE_OPM_PARSER
+    /*!
+     * \brief Initialize all internal data structures needed by the solvent module
+     */
+    static void initFromDeck(const Opm::Deck& deck, const Opm::EclipseState& eclState OPM_UNUSED)
+    {
+        // some sanity checks: if solvents are enabled, the SOLVENT keyword must be
+        // present, if solvents are disabled the keyword must not be present.
+        if (numSolvents > 0 && !deck.hasKeyword("SOLVENT")) {
+            OPM_THROW(std::runtime_error,
+                      "Non-trivial solvent treatment requested at compile time, but "
+                      "the deck does not contain the SOLVENT keyword");
+        }
+        else if (numSolvents == 0 && deck.hasKeyword("SOLVENT")) {
+            OPM_THROW(std::runtime_error,
+                      "Solvent treatment disabled at compile time, but the deck "
+                      "contains the SOLVENT keyword");
+        }
+    }
+
+    // TODO(?): init without opm-parser
+#endif
+
     /*!
      * \brief Register all run-time parameters for the black-oil solvent module.
      */
     static void registerParameters()
     {
-        // TODO: (if any)
+        if (numSolvents == 0)
+            // solvents have disabled at compile time
+            return;
+
+        VtkBlackOilSolventModule<TypeTag>::registerParameters();
     }
 
     /*!
      * \brief Register all solvent specific VTK and ECL output modules.
      */
-    static void registerOutputModules(Model& model OPM_UNUSED)
+    static void registerOutputModules(Model& model,
+                                      Simulator& simulator)
     {
-        // TODO: (if any)
+        if (numSolvents == 0)
+            // solvents have disabled at compile time
+            return;
+
+        model.addOutputModule(new Ewoms::VtkBlackOilSolventModule<TypeTag>(simulator));
     }
 
     static bool primaryVarApplies(unsigned pvIdx)
