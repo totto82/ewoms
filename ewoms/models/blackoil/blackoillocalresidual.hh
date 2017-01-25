@@ -107,10 +107,10 @@ public:
                     Toolbox::template decay<LhsEval>(intQuants.fluidState().Rv())
                     * surfaceVolume;
             }
-
-            // deal with solvents (if present)
-            SolventModule::addPhaseStorage(storage, intQuants, phaseIdx);
         }
+
+        // deal with solvents (if present)
+        SolventModule::addStorage(storage, intQuants);
 
         // convert surface volumes to component masses
         unsigned pvtRegionIdx = intQuants.pvtRegionIndex();
@@ -172,8 +172,6 @@ public:
             else
                 evalPhaseFluxes_<Scalar>(flux, phaseIdx, extQuants, up);
 
-            // deal with solvents (if present)
-            SolventModule::addPhaseFlux(flux, extQuants, up, phaseIdx);
         }
     }
 
@@ -223,6 +221,9 @@ protected:
                 * Toolbox::template decay<UpEval>(fs.Rv())
                 * surfaceVolumeFlux;
         }
+
+        // deal with solvents (if present)
+        SolventModule::template addPhaseFlux<UpEval>(flux, extQuants, up, phaseIdx);
     }
 
 };

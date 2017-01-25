@@ -95,7 +95,7 @@ public:
         }
     }
 
-    // TODO(?): init without opm-parser
+    // TODO(?): full init without opm-parser
 #endif
 
     /*!
@@ -165,20 +165,24 @@ public:
     }
 
     template <class LhsEval>
-    static void addPhaseStorage(Dune::FieldVector<LhsEval, numEq>& storage,
-                                const IntensiveQuantities& intQuants,
-                                unsigned phaseIdx)
+    static void addStorage(Dune::FieldVector<LhsEval, numEq>& storage,
+                           const IntensiveQuantities& intQuants)
     {
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            unsigned eqIdx = contiSolvent0EqIdx + solCompIdx;
+        const auto& fs = intQuants.fluidState();
+        for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++ phaseIdx) {
+            for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
+                unsigned eqIdx = contiSolvent0EqIdx + solCompIdx;
 
-            storage[eqIdx] +=
-                Toolbox::template decay<LhsEval>(intQuants.porosity())
-                * Toolbox::template decay<LhsEval>(intQuants.fluidState().saturation(phaseIdx))
-                * Toolbox::template decay<LhsEval>(intQuants.solventConcentration(phaseIdx, solCompIdx));
+                storage[eqIdx] +=
+                    Toolbox::template decay<LhsEval>(intQuants.porosity())
+                    * Toolbox::template decay<LhsEval>(fs.saturation(phaseIdx))
+                    * Toolbox::template decay<LhsEval>(intQuants.solventConcentration(phaseIdx,
+                                                                                      solCompIdx));
+            }
         }
     }
 
+    template <class UpEval>
     static void addPhaseFlux(RateVector& flux,
                              const ExtensiveQuantities& extQuants,
                              const IntensiveQuantities& upQuants,
@@ -188,7 +192,8 @@ public:
 
         for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
             int eqIdx = contiSolvent0EqIdx + solCompIdx;
-            const auto& upC = upQuants.solventConcentration(phaseIdx, solCompIdx);
+            const UpEval& upC =
+                Toolbox::template decay<UpEval>(upQuants.solventConcentration(phaseIdx, solCompIdx));
 
             flux[eqIdx] += volFlux*upC;
         }
