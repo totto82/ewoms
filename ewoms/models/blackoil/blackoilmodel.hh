@@ -100,7 +100,7 @@ SET_TYPE_PROP(BlackOilModel, ExtensiveQuantities, Ewoms::BlackOilExtensiveQuanti
 
 //! The indices required by the model
 SET_TYPE_PROP(BlackOilModel, Indices,
-              Ewoms::BlackOilIndices<GET_PROP_VALUE(TypeTag, NumSolvents), /*PVOffset=*/0>);
+              Ewoms::BlackOilIndices<GET_PROP_VALUE(TypeTag, EnableSolvent)?1:0, /*PVOffset=*/0>);
 
 //! Set the fluid system to the black-oil fluid system by default
 SET_PROP(BlackOilModel, FluidSystem)
@@ -113,8 +113,8 @@ public:
     typedef Opm::FluidSystems::BlackOil<Scalar> type;
 };
 
-// by default, we disable all solvents
-SET_INT_PROP(BlackOilModel, NumSolvents, 0);
+// by default, the ECL solvent module is disabled
+SET_BOOL_PROP(BlackOilModel, EnableSolvent, false);
 
 } // namespace Properties
 

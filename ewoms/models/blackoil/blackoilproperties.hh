@@ -40,8 +40,8 @@ NEW_PROP_TAG(EnableEclipseOutput);
 NEW_PROP_TAG(HeatConductionLaw);
 //! The parameters of the material law for heat conduction
 NEW_PROP_TAG(HeatConductionLawParams);
-//! The number of additional solvent components
-NEW_PROP_TAG(NumSolvents);
+//! Enable the ECL-blackoil extension for solvents. ("Second gas")
+NEW_PROP_TAG(EnableSolvent);
 }} // namespace Properties, Ewoms
 
 #endif

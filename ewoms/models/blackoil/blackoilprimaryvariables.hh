@@ -42,7 +42,7 @@
 #include <opm/common/Valgrind.hpp>
 
 namespace Ewoms {
-template <class TypeTag, unsigned numSolventsV>
+template <class TypeTag, bool enableSolvent>
 class BlackOilSolventModule;
 
 /*!
@@ -80,14 +80,14 @@ class BlackOilPrimaryVariables : public FvBasePrimaryVariables<TypeTag>
 
     // component indices from the fluid system
     enum { numComponents = GET_PROP_VALUE(TypeTag, NumComponents) };
-    enum { numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents) };
+    enum { enableSolvent = GET_PROP_VALUE(TypeTag, EnableSolvent) };
     enum { gasCompIdx = FluidSystem::gasCompIdx };
     enum { waterCompIdx = FluidSystem::waterCompIdx };
     enum { oilCompIdx = FluidSystem::oilCompIdx };
 
     typedef typename Opm::MathToolbox<Evaluation> Toolbox;
     typedef Dune::FieldVector<Scalar, numComponents> ComponentVector;
-    typedef BlackOilSolventModule<TypeTag, numSolvents> SolventModule;
+    typedef BlackOilSolventModule<TypeTag, enableSolvent> SolventModule;
 
     static_assert(numPhases == 3, "The black-oil model assumes three phases!");
     static_assert(numComponents == 3, "The black-oil model assumes three components!");

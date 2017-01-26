@@ -46,7 +46,7 @@ namespace Properties {
 NEW_TYPE_TAG(VtkBlackOilSolvent);
 
 // create the property tags needed for the solvent output module
-NEW_PROP_TAG(NumSolvents);
+NEW_PROP_TAG(EnableSolvent);
 NEW_PROP_TAG(EnableVtkOutput);
 NEW_PROP_TAG(VtkWriteSolventSaturation);
 
@@ -75,7 +75,7 @@ class VtkBlackOilSolventModule : public BaseOutputModule<TypeTag>
     static const int vtkFormat = GET_PROP_VALUE(TypeTag, VtkOutputFormat);
     typedef Ewoms::VtkMultiWriter<GridView, vtkFormat> VtkMultiWriter;
 
-    enum { numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents) };
+    enum { enableSolvent = GET_PROP_VALUE(TypeTag, EnableSolvent) };
 
     typedef typename ParentType::ScalarBuffer ScalarBuffer;
 
@@ -114,7 +114,7 @@ public:
         if (!EWOMS_GET_PARAM(TypeTag, bool, EnableVtkOutput))
             return;
 
-        if (numSolvents == 0)
+        if (!enableSolvent)
             return;
 
         typedef Opm::MathToolbox<Evaluation> Toolbox;
@@ -124,8 +124,7 @@ public:
 
             if (solventSaturationOutput_())
                 solventSaturation_[globalDofIdx] =
-                    Toolbox::scalarValue(intQuants.solventConcentration(/*phaseIdx=*/0,
-                                                                        /*solventCompIdx=*/0));
+                    Toolbox::scalarValue(intQuants.solventDensity(/*phaseIdx=*/0));
         }
     }
 
@@ -138,7 +137,7 @@ public:
         if (!vtkWriter)
             return;
 
-        if (numSolvents == 0)
+        if (!enableSolvent)
             return;
 
         if (solventSaturationOutput_())

@@ -51,7 +51,7 @@ namespace Ewoms {
  * \brief Contains the high level supplements required to extend the black oil
  *        model by solvents.
  */
-template <class TypeTag, unsigned numSolventsV = GET_PROP_VALUE(TypeTag, NumSolvents)>
+template <class TypeTag, bool enableSolventV = GET_PROP_VALUE(TypeTag, EnableSolvent)>
 class BlackOilSolventModule
 {
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
@@ -68,9 +68,9 @@ class BlackOilSolventModule
 
     typedef Opm::MathToolbox<Evaluation> Toolbox;
 
-    static constexpr unsigned solvent0PrimaryVarIdx = Indices::solvent0PrimaryVarIdx;
-    static constexpr unsigned contiSolvent0EqIdx = Indices::contiSolvent0EqIdx;
-    static constexpr unsigned numSolvents = numSolventsV;
+    static constexpr unsigned solventSaturationIdx = Indices::solventSaturationIdx;
+    static constexpr unsigned contiSolventEqIdx = Indices::contiSolventEqIdx;
+    static constexpr unsigned enableSolvent = enableSolventV;
     static constexpr unsigned numEq = GET_PROP_VALUE(TypeTag, NumEq);
     static constexpr unsigned numPhases = FluidSystem::numPhases;
 
@@ -83,12 +83,12 @@ public:
     {
         // some sanity checks: if solvents are enabled, the SOLVENT keyword must be
         // present, if solvents are disabled the keyword must not be present.
-        if (numSolvents > 0 && !deck.hasKeyword("SOLVENT")) {
+        if (enableSolvent && !deck.hasKeyword("SOLVENT")) {
             OPM_THROW(std::runtime_error,
                       "Non-trivial solvent treatment requested at compile time, but "
                       "the deck does not contain the SOLVENT keyword");
         }
-        else if (numSolvents == 0 && deck.hasKeyword("SOLVENT")) {
+        else if (!enableSolvent && deck.hasKeyword("SOLVENT")) {
             OPM_THROW(std::runtime_error,
                       "Solvent treatment disabled at compile time, but the deck "
                       "contains the SOLVENT keyword");
@@ -103,7 +103,7 @@ public:
      */
     static void registerParameters()
     {
-        if (numSolvents == 0)
+        if (!enableSolvent)
             // solvents have disabled at compile time
             return;
 
@@ -116,7 +116,7 @@ public:
     static void registerOutputModules(Model& model,
                                       Simulator& simulator)
     {
-        if (numSolvents == 0)
+        if (!enableSolvent)
             // solvents have disabled at compile time
             return;
 
@@ -124,17 +124,19 @@ public:
     }
 
     static bool primaryVarApplies(unsigned pvIdx)
-    { return pvIdx <= solvent0PrimaryVarIdx && solvent0PrimaryVarIdx + numSolvents < pvIdx; }
+    {
+        if (!enableSolvent)
+            // solvents have disabled at compile time
+            return false;
+
+        return pvIdx == solventSaturationIdx;
+    }
 
     static std::string primaryVarName(unsigned pvIdx)
     {
         assert(primaryVarApplies(pvIdx));
 
-        unsigned solCompIdx = pvIdx - solvent0PrimaryVarIdx;
-        // TODO: What is chosen as primary variables for the solvents? This could be
-        // e.g. the mole fractions in a given phase, total mass fractions, or
-        // concentrations...
-        return "c^sol," + std::to_string(solCompIdx);
+        return "saturation_solvent";
     }
 
     static Scalar primaryVarWeight(unsigned pvIdx OPM_OPTIM_UNUSED)
@@ -146,14 +148,18 @@ public:
     }
 
     static bool eqApplies(unsigned eqIdx)
-    { return eqIdx <= contiSolvent0EqIdx && contiSolvent0EqIdx + numSolvents < eqIdx; }
+    {
+        if (!enableSolvent)
+            return false;
+
+        return eqIdx == contiSolventEqIdx;
+    }
 
     static std::string eqName(unsigned eqIdx)
     {
         assert(eqApplies(eqIdx));
 
-        unsigned solCompIdx = eqIdx - contiSolvent0EqIdx;
-        return "conti^sol," + std::to_string(solCompIdx);
+        return "conti^solvent";
     }
 
     static Scalar eqWeight(unsigned eqIdx OPM_OPTIM_UNUSED)
@@ -168,17 +174,17 @@ public:
     static void addStorage(Dune::FieldVector<LhsEval, numEq>& storage,
                            const IntensiveQuantities& intQuants)
     {
+        if (!enableSolvent)
+            return;
+
         const auto& fs = intQuants.fluidState();
         for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++ phaseIdx) {
-            for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-                unsigned eqIdx = contiSolvent0EqIdx + solCompIdx;
+            unsigned eqIdx = contiSolventEqIdx;
 
-                storage[eqIdx] +=
-                    Toolbox::template decay<LhsEval>(intQuants.porosity())
-                    * Toolbox::template decay<LhsEval>(fs.saturation(phaseIdx))
-                    * Toolbox::template decay<LhsEval>(intQuants.solventConcentration(phaseIdx,
-                                                                                      solCompIdx));
-            }
+            storage[eqIdx] +=
+                Toolbox::template decay<LhsEval>(intQuants.porosity())
+                * Toolbox::template decay<LhsEval>(fs.saturation(phaseIdx))
+                * Toolbox::template decay<LhsEval>(intQuants.solventDensity(phaseIdx));
         }
     }
 
@@ -188,28 +194,27 @@ public:
                              const IntensiveQuantities& upQuants,
                              unsigned phaseIdx)
     {
+        if (!enableSolvent)
+            return;
+
         const auto& volFlux = extQuants.volumeFlux(phaseIdx);
 
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            int eqIdx = contiSolvent0EqIdx + solCompIdx;
-            const UpEval& upC =
-                Toolbox::template decay<UpEval>(upQuants.solventConcentration(phaseIdx, solCompIdx));
+        const UpEval& upRhoSol =
+            Toolbox::template decay<UpEval>(upQuants.solventDensity(phaseIdx));
 
-            flux[eqIdx] += volFlux*upC;
-        }
+        flux[contiSolventEqIdx] += volFlux*upRhoSol;
     }
 
     /*!
      * \brief Assign the solvent specific primary variables to a PrimaryVariables object
      */
-    template <class SolventValues>
     static void assignPrimaryVars(PrimaryVariables& priVars,
-                                  const SolventValues& solventPvValues)
+                                  Scalar solventSaturation)
     {
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            unsigned pvIdx = solvent0PrimaryVarIdx + solCompIdx;
-            priVars[pvIdx] = solventPvValues[solCompIdx];
-        }
+        if (!enableSolvent)
+            return;
+
+        priVars[solventSaturationIdx] = solventSaturation;
     }
 
     /*!
@@ -219,12 +224,11 @@ public:
                                   const PrimaryVariables& oldPv,
                                   const EqVector& delta)
     {
-        // do a plain unchopped Newton update
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            unsigned pvIdx = solvent0PrimaryVarIdx + solCompIdx;
+        if (!enableSolvent)
+            return;
 
-            newPv[pvIdx] = oldPv[pvIdx] - delta[pvIdx];
-        }
+        // do a plain unchopped Newton update
+        newPv[solventSaturationIdx] = oldPv[solventSaturationIdx] - delta[solventSaturationIdx];
     }
 
     /*!
@@ -251,6 +255,9 @@ public:
     template <class DofEntity>
     static void serializeEntity(const Model& model, std::ostream& outstream, const DofEntity& dof)
     {
+        if (!enableSolvent)
+            return;
+
 #if DUNE_VERSION_NEWER(DUNE_COMMON, 2,4)
         unsigned dofIdx = model.dofMapper().index(dof);
 #else
@@ -258,16 +265,15 @@ public:
 #endif
 
         const PrimaryVariables& priVars = model.solution(/*timeIdx=*/0)[dofIdx];
-
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            unsigned pvIdx = solvent0PrimaryVarIdx + solCompIdx;
-            outstream << priVars[pvIdx];
-        }
+        outstream << priVars[solventSaturationIdx];
     }
 
     template <class DofEntity>
     static void deserializeEntity(Model& model, std::istream& instream, const DofEntity& dof)
     {
+        if (!enableSolvent)
+            return;
+
 #if DUNE_VERSION_NEWER(DUNE_COMMON, 2,4)
         unsigned dofIdx = model.dofMapper().index(dof);
 #else
@@ -277,95 +283,11 @@ public:
         PrimaryVariables& priVars0 = model.solution(/*timeIdx=*/0)[dofIdx];
         PrimaryVariables& priVars1 = model.solution(/*timeIdx=*/1)[dofIdx];
 
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++ solCompIdx) {
-            unsigned pvIdx = solvent0PrimaryVarIdx + solCompIdx;
-            instream >> priVars0[pvIdx];
+        instream >> priVars0[solventSaturationIdx];
 
-            // set the primary variables for the beginning of the current time step.
-            priVars1 = priVars0[pvIdx];
-        }
+        // set the primary variables for the beginning of the current time step.
+        priVars1 = priVars0[solventSaturationIdx];
     }
-};
-
-// the specialization of the solvent module for the trivial case (i.e., no solvents)
-template <class TypeTag>
-class BlackOilSolventModule<TypeTag, /*numSolvents=*/0>
-{
-    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
-    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
-    typedef typename GET_PROP_TYPE(TypeTag, IntensiveQuantities) IntensiveQuantities;
-    typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) ExtensiveQuantities;
-    typedef typename GET_PROP_TYPE(TypeTag, Model) Model;
-    typedef typename GET_PROP_TYPE(TypeTag, EqVector) EqVector;
-    typedef typename GET_PROP_TYPE(TypeTag, RateVector) RateVector;
-
-    static constexpr unsigned numEq = GET_PROP_VALUE(TypeTag, NumEq);
-
-public:
-    static void registerParameters()
-    {}
-
-    static void registerOutputModules(Model& model OPM_UNUSED)
-    { }
-
-    static bool primaryVarApplies(unsigned pvIdx OPM_UNUSED)
-    { return false; }
-
-    static std::string primaryVarName(unsigned pvIdx OPM_UNUSED)
-    { OPM_THROW(std::logic_error, "Solvents are disabled!"); }
-
-    static Scalar primaryVarWeight(unsigned pvIdx OPM_UNUSED)
-    { OPM_THROW(std::logic_error, "Solvents are disabled!"); }
-
-    static bool eqApplies(unsigned eqIdx OPM_UNUSED)
-    { return false; }
-
-    static std::string eqName(unsigned eqIdx OPM_UNUSED)
-    { OPM_THROW(std::logic_error, "Solvents are disabled!"); }
-
-    static Scalar eqWeight(unsigned eqIdx OPM_UNUSED)
-    { OPM_THROW(std::logic_error, "Solvents are disabled!"); }
-
-    template <class LhsEval>
-    static void addPhaseStorage(Dune::FieldVector<LhsEval, numEq>& storage OPM_UNUSED,
-                                const IntensiveQuantities& intQuants OPM_UNUSED,
-                                unsigned phaseIdx OPM_UNUSED)
-    { }
-
-    static void addPhaseFlux(RateVector& flux OPM_UNUSED,
-                             const ExtensiveQuantities& extQuants OPM_UNUSED,
-                             const IntensiveQuantities& upQuants OPM_UNUSED,
-                             unsigned phaseIdx OPM_UNUSED)
-    { }
-
-    template <class SolventValues>
-    static void assignPrimaryVars(PrimaryVariables& priVars OPM_UNUSED,
-                                  const SolventValues& solventPvValues OPM_UNUSED)
-    { }
-
-    static void updatePrimaryVars(PrimaryVariables& newPv OPM_UNUSED,
-                                  const PrimaryVariables& oldPv OPM_UNUSED,
-                                  const EqVector& delta OPM_UNUSED)
-    { }
-
-    static Scalar computeUpdateError(const PrimaryVariables& oldPv OPM_UNUSED,
-                                     const EqVector& delta OPM_UNUSED)
-    { return static_cast<Scalar>(0.0); }
-
-    static Scalar computeResidualError(const EqVector& resid OPM_UNUSED)
-    { return static_cast<Scalar>(0.0); }
-
-    template <class DofEntity>
-    static void serializeEntity(const Model& model OPM_UNUSED,
-                                std::ostream& outstream OPM_UNUSED,
-                                const DofEntity& dof OPM_UNUSED)
-    { }
-
-    template <class DofEntity>
-    static void deserializeEntity(Model& model OPM_UNUSED,
-                                  std::istream& instream OPM_UNUSED,
-                                  const DofEntity& dof OPM_UNUSED)
-    { }
 };
 
 /*!
@@ -378,16 +300,12 @@ public:
 template <class TypeTag>
 class BlackOilSolventIntensiveQuantities
 {
-/*
-    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
-*/
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
     typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
 
-    static constexpr int numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents);
-    static constexpr int solvent0PrimaryVarIdx = Indices::solvent0PrimaryVarIdx;
+    static constexpr int solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr int oilPhaseIdx = FluidSystem::oilPhaseIdx;
 
 public:
@@ -401,25 +319,22 @@ public:
     {
         const PrimaryVariables& priVars = context.primaryVars(spaceIdx, timeIdx);
 
-        for (unsigned solCompIdx = 0; solCompIdx < numSolvents; ++solCompIdx) {
-            solventConcentration_[solCompIdx] =
-                priVars.makeEvaluation(solvent0PrimaryVarIdx + solCompIdx, timeIdx);
-        }
+        solventSaturation_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
     }
 
-    const Evaluation& solventConcentration(unsigned /*phaseIdx*/, unsigned solCompIdx) const
+    const Evaluation& solventSaturation() const
     {
-#warning "TODO: when is which phase active? (In each case a non-zero value must be returned for some phase!)"
-        //static const Evaluation zero(0.0);
-        //if (phaseIdx != oilPhaseIdx)
-        //    return zero;
+        return solventSaturation_;
+    }
 
-        return solventConcentration_[solCompIdx];
+    const Evaluation& solventDensity(unsigned phaseIdx OPM_UNUSED) const
+    {
+        return solventSaturation();
     }
 
 protected:
-    // TODO: solvent specific intensive quantities
-    std::array<Evaluation, numSolvents> solventConcentration_;
+    Evaluation solventSaturation_;
+    Evaluation solventDensity_;
 };
 
 } // namespace Ewoms

@@ -223,7 +223,7 @@ SET_BOOL_PROP(EclBaseProblem, EnableDebuggingChecks, true);
 // ebos handles the SWATINIT keyword by default
 SET_BOOL_PROP(EclBaseProblem, EnableSwatinit, true);
 
-SET_INT_PROP(EclBaseProblem, NumSolvents, 1);
+SET_BOOL_PROP(EclBaseProblem, EnableSolvent, true);
 } // namespace Properties
 
 /*!
@@ -250,7 +250,7 @@ class EclProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     enum { numEq = GET_PROP_VALUE(TypeTag, NumEq) };
     enum { numPhases = FluidSystem::numPhases };
     enum { numComponents = FluidSystem::numComponents };
-    enum { numSolvents = GET_PROP_VALUE(TypeTag, NumSolvents) };
+    enum { enableSolvent = GET_PROP_VALUE(TypeTag, EnableSolvent) };
     enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
     enum { oilPhaseIdx = FluidSystem::oilPhaseIdx };
     enum { waterPhaseIdx = FluidSystem::waterPhaseIdx };
@@ -807,12 +807,12 @@ public:
 
         if (useMassConservativeInitialCondition_) {
             const auto& matParams = materialLawParams(context, spaceIdx, timeIdx);
-            Dune::FieldVector<Scalar, numSolvents> solventPv(0.0);
-            values.assignMassConservative(initialFluidStates_[globalDofIdx], matParams, solventPv);
+            Scalar solventSaturation = 0.0;
+            values.assignMassConservative(initialFluidStates_[globalDofIdx], matParams, solventSaturation);
         }
         else {
-            Dune::FieldVector<Scalar, numSolvents> solventPv(0.0);
-            values.assignNaive(initialFluidStates_[globalDofIdx], solventPv);
+            Scalar solventSaturation = 0.0;
+            values.assignNaive(initialFluidStates_[globalDofIdx], solventSaturation);
         }
     }
 
@@ -881,7 +881,7 @@ public:
         typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
         unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
         if (globalDofIdx < 100)
-            rate[Indices::contiSolvent0EqIdx] = 0.001; // mol/m^3/s
+            rate[Indices::contiSolventEqIdx] = 0.001; // mol/m^3/s
     }
 
     /*!

@@ -65,7 +65,7 @@ struct BlackOilIndices
     static const int compositionSwitchIdx = PVOffset + 2;
 
     //! Index of the primary variable for the first solvent
-    static const int solvent0PrimaryVarIdx  = PVOffset + 3;
+    static const int solventSaturationIdx  = PVOffset + 3;
     // numSolvents-1 primary variables follow
 
     ////////
@@ -77,7 +77,7 @@ struct BlackOilIndices
     // two continuity equations follow
 
     //! Index of the continuity equation for the first solvent component
-    static const int contiSolvent0EqIdx = PVOffset + 3;
+    static const int contiSolventEqIdx = PVOffset + 3;
     // numSolvents-1 continuity equations follow
 };
 
