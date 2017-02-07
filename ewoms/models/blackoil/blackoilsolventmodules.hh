@@ -31,6 +31,8 @@
 #include "blackoilproperties.hh"
 #include <ewoms/io/vtkblackoilsolventmodule.hh>
 
+#include <opm/material/fluidsystems/blackoilpvt/SolventPvt.hpp>
+
 #if HAVE_OPM_PARSER
 #include <opm/parser/eclipse/Deck/Deck.hpp>
 #include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
@@ -67,6 +69,7 @@ class BlackOilSolventModule
     typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
 
     typedef Opm::MathToolbox<Evaluation> Toolbox;
+    typedef Opm::SolventPvt<Scalar> SolventPvt;
 
     static constexpr unsigned solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr unsigned contiSolventEqIdx = Indices::contiSolventEqIdx;
@@ -79,7 +82,7 @@ public:
     /*!
      * \brief Initialize all internal data structures needed by the solvent module
      */
-    static void initFromDeck(const Opm::Deck& deck, const Opm::EclipseState& eclState OPM_UNUSED)
+    static void initFromDeck(const Opm::Deck& deck, const Opm::EclipseState& eclState)
     {
         // some sanity checks: if solvents are enabled, the SOLVENT keyword must be
         // present, if solvents are disabled the keyword must not be present.
@@ -93,6 +96,11 @@ public:
                       "Solvent treatment disabled at compile time, but the deck "
                       "contains the SOLVENT keyword");
         }
+
+        if (!deck.hasKeyword("SOLVENT"))
+            return; // solvent treatment is supposed to be disabled
+
+        pvds_.initFromDeck(deck, eclState);
     }
 
     // TODO(?): full init without opm-parser
@@ -132,7 +140,7 @@ public:
         return pvIdx == solventSaturationIdx;
     }
 
-    static std::string primaryVarName(unsigned pvIdx)
+    static std::string primaryVarName(unsigned pvIdx OPM_OPTIM_UNUSED)
     {
         assert(primaryVarApplies(pvIdx));
 
@@ -155,7 +163,7 @@ public:
         return eqIdx == contiSolventEqIdx;
     }
 
-    static std::string eqName(unsigned eqIdx)
+    static std::string eqName(unsigned eqIdx OPM_OPTIM_UNUSED)
     {
         assert(eqApplies(eqIdx));
 
@@ -177,30 +185,24 @@ public:
         if (!enableSolvent)
             return;
 
-        const auto& fs = intQuants.fluidState();
-        for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++ phaseIdx) {
-            unsigned eqIdx = contiSolventEqIdx;
-
-            storage[eqIdx] +=
-                Toolbox::template decay<LhsEval>(intQuants.porosity())
-                * Toolbox::template decay<LhsEval>(fs.saturation(phaseIdx))
-                * Toolbox::template decay<LhsEval>(intQuants.solventDensity(phaseIdx));
-        }
+        storage[contiSolventEqIdx] +=
+            Toolbox::template decay<LhsEval>(intQuants.porosity())
+            * Toolbox::template decay<LhsEval>(intQuants.solventSaturation())
+            * Toolbox::template decay<LhsEval>(intQuants.solventDensity());
     }
 
     template <class UpEval>
-    static void addPhaseFlux(RateVector& flux,
-                             const ExtensiveQuantities& extQuants,
-                             const IntensiveQuantities& upQuants,
-                             unsigned phaseIdx)
+    static void addFlux(RateVector& flux,
+                        const ExtensiveQuantities& extQuants,
+                        const IntensiveQuantities& upQuants)
     {
         if (!enableSolvent)
             return;
 
-        const auto& volFlux = extQuants.volumeFlux(phaseIdx);
+        const auto& volFlux = extQuants.solventVolumeFlux();
 
         const UpEval& upRhoSol =
-            Toolbox::template decay<UpEval>(upQuants.solventDensity(phaseIdx));
+            Toolbox::template decay<UpEval>(upQuants.solventDensity());
 
         flux[contiSolventEqIdx] += volFlux*upRhoSol;
     }
@@ -237,7 +239,8 @@ public:
     static Scalar computeUpdateError(const PrimaryVariables& oldPv OPM_UNUSED,
                                      const EqVector& delta OPM_UNUSED)
     {
-        // do not consider solvents for convergence
+        // do not consider consider the cange of solvent primary variables for
+        // convergence
         // TODO: maybe this should be changed
         return static_cast<Scalar>(0.0);
     }
@@ -245,11 +248,10 @@ public:
     /*!
      * \brief Return how much a residual is considered an error
      */
-    static Scalar computeResidualError(const EqVector& resid OPM_UNUSED)
+    static Scalar computeResidualError(const EqVector& resid)
     {
-        // do not consider solvents for convergence
-        // TODO: maybe this should be changed
-        return static_cast<Scalar>(0.0);
+        // do not weight the residual of solvents when it comes to convergence
+        return std::abs(Toolbox::scalarValue(resid[contiSolventEqIdx]));
     }
 
     template <class DofEntity>
@@ -288,7 +290,17 @@ public:
         // set the primary variables for the beginning of the current time step.
         priVars1 = priVars0[solventSaturationIdx];
     }
+
+    static const SolventPvt& solventPvt()
+    { return pvds_; }
+
+private:
+    static SolventPvt pvds_;
 };
+
+template <class TypeTag, bool enableSolventV>
+typename BlackOilSolventModule<TypeTag, enableSolventV>::SolventPvt
+BlackOilSolventModule<TypeTag, enableSolventV>::pvds_;
 
 /*!
  * \ingroup BlackOil
@@ -297,16 +309,20 @@ public:
  * \brief Provides the volumetric quantities required for the equations needed by the
  *        solvents extension of the black-oil model.
  */
-template <class TypeTag>
+template <class TypeTag, bool enableSolventV = GET_PROP_VALUE(TypeTag, EnableSolvent)>
 class BlackOilSolventIntensiveQuantities
 {
+    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
     typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
 
+    typedef BlackOilSolventModule<TypeTag> SolventModule;
+
     static constexpr int solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr int oilPhaseIdx = FluidSystem::oilPhaseIdx;
+    static constexpr int gasPhaseIdx = FluidSystem::gasPhaseIdx;
 
 public:
     /*!
@@ -318,23 +334,104 @@ public:
                  unsigned timeIdx)
     {
         const PrimaryVariables& priVars = context.primaryVars(spaceIdx, timeIdx);
+        const auto& iq = context.intensiveQuantities(spaceIdx, timeIdx);
+        const auto& fs = iq.fluidState();
+        const auto& solventPvt = SolventModule::solventPvt();
+
+        unsigned pvtRegionIdx = iq.pvtRegionIndex();
+        Scalar rhoRef = solventPvt.referenceDensity(pvtRegionIdx);
+        const Evaluation& T = fs.temperature(gasPhaseIdx);
+        const Evaluation& p = fs.pressure(gasPhaseIdx);
+        const Evaluation& b = solventPvt.inverseFormationVolumeFactor(pvtRegionIdx, T, p);
 
         solventSaturation_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+        solventDensity_ = b*rhoRef;
+        solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
     }
 
     const Evaluation& solventSaturation() const
-    {
-        return solventSaturation_;
-    }
+    { return solventSaturation_; }
 
-    const Evaluation& solventDensity(unsigned phaseIdx OPM_UNUSED) const
-    {
-        return solventSaturation();
-    }
+    const Evaluation& solventDensity() const
+    { return solventDensity_; }
+
+    const Evaluation& solventViscosity() const
+    { return solventViscosity_; }
 
 protected:
     Evaluation solventSaturation_;
     Evaluation solventDensity_;
+    Evaluation solventViscosity_;
+};
+
+template <class TypeTag>
+class BlackOilSolventIntensiveQuantities<TypeTag, false>
+{
+    typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+
+public:
+    /*!
+     * \brief Update the intensive quantities needed to handle solvents from the primary variables.
+     */
+    template <class Context>
+    void update_(const Context& context OPM_UNUSED,
+                 unsigned spaceIdx OPM_UNUSED,
+                 unsigned timeIdx OPM_UNUSED)
+    { }
+
+    const Evaluation& solventSaturation() const
+    { OPM_THROW(std::runtime_error, "solventSaturation() called but solvents are disabled"); }
+
+    const Evaluation& solventDensity() const
+    { OPM_THROW(std::runtime_error, "solventDensity() called but solvents are disabled"); }
+
+    const Evaluation& solventViscosity() const
+    { OPM_THROW(std::runtime_error, "solventViscosity() called but solvents are disabled"); }
+};
+
+/*!
+ * \ingroup BlackOil
+ * \class Ewoms::BlackOilSolventExtensiveQuantities
+ *
+ * \brief Provides the solvent specific extensive quantities to the generic black-oil
+ *        module's extensive quantities.
+ */
+template <class TypeTag, bool enableSolventV = GET_PROP_VALUE(TypeTag, EnableSolvent)>
+class BlackOilSolventExtensiveQuantities
+{
+    typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+
+public:
+    /*!
+     * \brief Update the extensive quantities needed to handle solvents from the primary variables.
+     */
+    template <class Context>
+    void update_(const Context& context OPM_UNUSED,
+                 unsigned spaceIdx OPM_UNUSED,
+                 unsigned timeIdx OPM_UNUSED)
+    { OPM_THROW(std::runtime_error, "TODO"); }
+
+    const Evaluation& solventVolumeFlux() const
+    { OPM_THROW(std::runtime_error, "TODO"); }
+};
+
+template <class TypeTag>
+class BlackOilSolventExtensiveQuantities<TypeTag, false>
+{
+    typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+
+public:
+    /*!
+     * \brief Update the extensive quantities needed to handle solvents from the primary variables.
+     */
+    template <class Context>
+    void update_(const Context& context OPM_UNUSED,
+                 unsigned spaceIdx OPM_UNUSED,
+                 unsigned timeIdx OPM_UNUSED)
+    { }
+
+    const Evaluation& solventVolumeFlux() const
+    { OPM_THROW(std::runtime_error, "solventVolumeFlux() called but solvents are disabled"); }
 };
 
 } // namespace Ewoms

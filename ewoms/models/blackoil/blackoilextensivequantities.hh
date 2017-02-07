@@ -29,6 +29,7 @@
 #define EWOMS_BLACK_OIL_EXTENSIVE_QUANTITIES_HH
 
 #include "blackoilproperties.hh"
+#include "blackoilsolventmodules.hh"
 
 #include <ewoms/models/common/multiphasebaseextensivequantities.hh>
 
@@ -48,6 +49,7 @@ namespace Ewoms {
 template <class TypeTag>
 class BlackOilExtensiveQuantities
     : public MultiPhaseBaseExtensiveQuantities<TypeTag>
+    , public BlackOilSolventExtensiveQuantities<TypeTag>
 { };
 
 } // namespace Ewoms

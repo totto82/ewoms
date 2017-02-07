@@ -49,9 +49,11 @@ NEW_TYPE_TAG(VtkBlackOilSolvent);
 NEW_PROP_TAG(EnableSolvent);
 NEW_PROP_TAG(EnableVtkOutput);
 NEW_PROP_TAG(VtkWriteSolventSaturation);
+NEW_PROP_TAG(VtkWriteSolventDensity);
 
 // set default values for what quantities to output
 SET_BOOL_PROP(VtkBlackOilSolvent, VtkWriteSolventSaturation, true);
+SET_BOOL_PROP(VtkBlackOilSolvent, VtkWriteSolventDensity, true);
 } // namespace Properties
 } // namespace Ewoms
 
@@ -91,7 +93,10 @@ public:
     static void registerParameters()
     {
         EWOMS_REGISTER_PARAM(TypeTag, bool, VtkWriteSolventSaturation,
-                             "Include the \"saturation\" of the solvent components "
+                             "Include the \"saturation\" of the solvent component "
+                             "in the VTK output files");
+        EWOMS_REGISTER_PARAM(TypeTag, bool, VtkWriteSolventDensity,
+                             "Include the \"density\" of the solvent component "
                              "in the VTK output files");
     }
 
@@ -103,6 +108,8 @@ public:
     {
         if (solventSaturationOutput_())
             this->resizeScalarBuffer_(solventSaturation_);
+        if (solventDensityOutput_())
+            this->resizeScalarBuffer_(solventDensity_);
     }
 
     /*!
@@ -124,7 +131,11 @@ public:
 
             if (solventSaturationOutput_())
                 solventSaturation_[globalDofIdx] =
-                    Toolbox::scalarValue(intQuants.solventDensity(/*phaseIdx=*/0));
+                    Toolbox::scalarValue(intQuants.solventSaturation());
+
+            if (solventDensityOutput_())
+                solventDensity_[globalDofIdx] =
+                    Toolbox::scalarValue(intQuants.solventDensity());
         }
     }
 
@@ -142,13 +153,20 @@ public:
 
         if (solventSaturationOutput_())
             this->commitScalarBuffer_(baseWriter, "saturation_solvent", solventSaturation_);
+
+        if (solventDensityOutput_())
+            this->commitScalarBuffer_(baseWriter, "density_solvent", solventDensity_);
     }
 
 private:
     static bool solventSaturationOutput_()
     { return EWOMS_GET_PARAM(TypeTag, bool, VtkWriteSolventSaturation); }
 
+    static bool solventDensityOutput_()
+    { return EWOMS_GET_PARAM(TypeTag, bool, VtkWriteSolventDensity); }
+
     ScalarBuffer solventSaturation_;
+    ScalarBuffer solventDensity_;
 };
 } // namespace Ewoms
 
