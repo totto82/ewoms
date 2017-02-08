@@ -50,7 +50,27 @@ template <class TypeTag>
 class BlackOilExtensiveQuantities
     : public MultiPhaseBaseExtensiveQuantities<TypeTag>
     , public BlackOilSolventExtensiveQuantities<TypeTag>
-{ };
+{
+    typedef MultiPhaseBaseExtensiveQuantities<TypeTag> MultiPhaseParent;
+    typedef BlackOilSolventExtensiveQuantities<TypeTag> SolventParent;
+
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
+
+public:
+    /*!
+     * \brief Update the extensive quantities for a given sub-control-volume-face.
+     *
+     * \param elemCtx Reference to the current element context.
+     * \param scvfIdx The local index of the sub-control-volume face for
+     *                which the extensive quantities should be calculated.
+     * \param timeIdx The index used by the time discretization.
+     */
+    void update(const ElementContext& elemCtx, unsigned scvfIdx, unsigned timeIdx)
+    {
+        MultiPhaseParent::update(elemCtx, scvfIdx, timeIdx);
+        SolventParent::update(elemCtx, scvfIdx, timeIdx);
+    }
+};
 
 } // namespace Ewoms
 

@@ -136,6 +136,8 @@ public:
         fluidState_.setSaturation(gasPhaseIdx, Sg);
         fluidState_.setSaturation(oilPhaseIdx, So);
 
+        SolventIntensiveQuantities::preSatFuncUpdate_(elemCtx, dofIdx, timeIdx);
+
         // now we compute all phase pressures
         Evaluation pC[numPhases];
         const auto& materialParams = problem.materialLawParams(elemCtx, dofIdx, timeIdx);
@@ -153,6 +155,13 @@ public:
             for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++phaseIdx)
                 fluidState_.setPressure(phaseIdx, po + (pC[phaseIdx] - pC[oilPhaseIdx]));
         }
+
+        // calculate relative permeabilities. note that we store the result into the
+        // mobility_ class attribute. the division by the phase viscosity happens later.
+        MaterialLaw::relativePermeabilities(mobility_, materialParams, fluidState_);
+        Valgrind::CheckDefined(mobility_);
+
+        SolventIntensiveQuantities::postSatFuncUpdate_(elemCtx, dofIdx, timeIdx);
 
         Scalar SoMax = elemCtx.model().maxOilSaturation(globalSpaceIdx);
 
@@ -224,17 +233,13 @@ public:
                 fluidState_.setRs(0.0);
         }
 
-        // calculate relative permeabilities
-        MaterialLaw::relativePermeabilities(mobility_, materialParams, fluidState_);
-        Opm::Valgrind::CheckDefined(mobility_);
-
         typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
         typename FluidSystem::template ParameterCache<Evaluation> paramCache;
         paramCache.setRegionIndex(pvtRegionIdx);
         paramCache.setMaxOilSat(SoMax);
         paramCache.updateAll(fluidState_);
 
-        // set the phase densities and viscosities
+        // compute the phase densities and transform the phase permeabilities into mobilities
         for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++phaseIdx) {
             if (!FluidSystem::phaseIsActive(phaseIdx))
                 continue;
@@ -245,6 +250,7 @@ public:
             const auto& mu = FluidSystem::viscosity(fluidState_, paramCache, phaseIdx);
             mobility_[phaseIdx] /= mu;
         }
+        Opm::Valgrind::CheckDefined(mobility_);
 
         // calculate the phase densities
         Evaluation rho;
@@ -290,7 +296,7 @@ public:
             porosity_ *= 1.0 + x + 0.5*x*x;
         }
 
-        SolventIntensiveQuantities::update_(elemCtx, dofIdx, timeIdx);
+        SolventIntensiveQuantities::pvtUpdate_(elemCtx, dofIdx, timeIdx);
 
         // update the quantities which are required by the chosen
         // velocity model
@@ -358,6 +364,8 @@ public:
     }
 
 private:
+    friend BlackOilSolventIntensiveQuantities<TypeTag>;
+
     FluidState fluidState_;
     Evaluation porosity_;
     Evaluation mobility_[numPhases];

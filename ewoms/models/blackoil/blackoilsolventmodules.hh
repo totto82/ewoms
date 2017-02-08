@@ -100,7 +100,7 @@ public:
         if (!deck.hasKeyword("SOLVENT"))
             return; // solvent treatment is supposed to be disabled
 
-        pvds_.initFromDeck(deck, eclState);
+        solventPvt_.initFromDeck(deck, eclState);
     }
 
     // TODO(?): full init without opm-parser
@@ -292,15 +292,15 @@ public:
     }
 
     static const SolventPvt& solventPvt()
-    { return pvds_; }
+    { return solventPvt_; }
 
 private:
-    static SolventPvt pvds_;
+    static SolventPvt solventPvt_;
 };
 
 template <class TypeTag, bool enableSolventV>
 typename BlackOilSolventModule<TypeTag, enableSolventV>::SolventPvt
-BlackOilSolventModule<TypeTag, enableSolventV>::pvds_;
+BlackOilSolventModule<TypeTag, enableSolventV>::solventPvt_;
 
 /*!
  * \ingroup BlackOil
@@ -312,11 +312,14 @@ BlackOilSolventModule<TypeTag, enableSolventV>::pvds_;
 template <class TypeTag, bool enableSolventV = GET_PROP_VALUE(TypeTag, EnableSolvent)>
 class BlackOilSolventIntensiveQuantities
 {
+    typedef typename GET_PROP_TYPE(TypeTag, IntensiveQuantities) Implementation;
+
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
     typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
 
     typedef BlackOilSolventModule<TypeTag> SolventModule;
 
@@ -326,15 +329,67 @@ class BlackOilSolventIntensiveQuantities
 
 public:
     /*!
-     * \brief Update the intensive quantities needed to handle solvents from the primary variables.
+     * \brief Called before the saturation functions are doing their magic
+     *
+     * At this point, the saturations of the fluid state correspond to those if the phases
+     * were pure hydrocarbons.
      */
-    template <class Context>
-    void update_(const Context& context,
-                 unsigned spaceIdx,
-                 unsigned timeIdx)
+    void preSatFuncUpdate_(const ElementContext& elemCtx,
+                           unsigned scvIdx,
+                           unsigned timeIdx)
     {
-        const PrimaryVariables& priVars = context.primaryVars(spaceIdx, timeIdx);
-        const auto& iq = context.intensiveQuantities(spaceIdx, timeIdx);
+        const PrimaryVariables& priVars = elemCtx.primaryVars(scvIdx, timeIdx);
+        auto& fs = asImp_().fluidState_;
+        solventSaturation_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+        hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
+
+        // make the saturation of the gas phase which is used by the saturation functions
+        // the sum of the solvent "saturation" and the saturation the hydrocarbon gas.
+        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_ + solventSaturation_);
+    }
+
+    /*!
+     * \brief Called after the saturation functions have been doing their magic
+     *
+     * At this point, the pressures of the fluid state are final. After this function,
+     * all saturations and relative permeabilities must be final. (i.e., the "hydrocarbon
+     * saturations".)
+     */
+    void postSatFuncUpdate_(const ElementContext& elemCtx OPM_UNUSED,
+                            unsigned scvIdx OPM_UNUSED,
+                            unsigned timeIdx OPM_UNUSED)
+    {
+        // revert the gas "saturation" of the fluid state back to the saturation of the
+        // hydrocarbon gas.
+        auto& fs = asImp_().fluidState_;
+        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+
+        // compute the mobility of the solvent "phase". this only covers the "immiscible"
+        // case.
+        solventMobility_ = 0.0;
+        Evaluation Stot = hydrocarbonSaturation_ + solventSaturation_;
+        if (Stot > 0.0) {
+            Evaluation Fhydgas = hydrocarbonSaturation_/Stot;
+            Evaluation Fsolgas = solventSaturation_/Stot;
+
+#warning TODO: implement SSFN
+            Evaluation& krg = asImp_().mobility_[gasPhaseIdx];
+            solventMobility_ = krg * Fsolgas;
+            krg *= Fhydgas;
+        }
+    }
+
+    /*!
+     * \brief Update the intensive PVT properties needed to handle solvents from the
+     *        primary variables.
+     *
+     * At this point the pressures and saturations of the fluid state are correct.
+     */
+    void pvtUpdate_(const ElementContext& elemCtx,
+                    unsigned scvIdx,
+                    unsigned timeIdx)
+    {
+        const auto& iq = elemCtx.intensiveQuantities(scvIdx, timeIdx);
         const auto& fs = iq.fluidState();
         const auto& solventPvt = SolventModule::solventPvt();
 
@@ -344,9 +399,9 @@ public:
         const Evaluation& p = fs.pressure(gasPhaseIdx);
         const Evaluation& b = solventPvt.inverseFormationVolumeFactor(pvtRegionIdx, T, p);
 
-        solventSaturation_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+#warning TODO: implement "miscibility"
         solventDensity_ = b*rhoRef;
-        solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
+        solventMobility_ /= solventPvt.viscosity(pvtRegionIdx, T, p);
     }
 
     const Evaluation& solventSaturation() const
@@ -355,28 +410,39 @@ public:
     const Evaluation& solventDensity() const
     { return solventDensity_; }
 
-    const Evaluation& solventViscosity() const
-    { return solventViscosity_; }
+    const Evaluation& solventMobility() const
+    { return solventMobility_; }
 
 protected:
+    Implementation& asImp_()
+    { return *static_cast<Implementation*>(this); }
+
+    Evaluation hydrocarbonSaturation_;
     Evaluation solventSaturation_;
     Evaluation solventDensity_;
-    Evaluation solventViscosity_;
+    Evaluation solventMobility_;
 };
 
 template <class TypeTag>
 class BlackOilSolventIntensiveQuantities<TypeTag, false>
 {
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
 
 public:
-    /*!
-     * \brief Update the intensive quantities needed to handle solvents from the primary variables.
-     */
-    template <class Context>
-    void update_(const Context& context OPM_UNUSED,
-                 unsigned spaceIdx OPM_UNUSED,
-                 unsigned timeIdx OPM_UNUSED)
+    void preSatFuncUpdate_(const ElementContext& elemCtx OPM_UNUSED,
+                           unsigned scvIdx OPM_UNUSED,
+                           unsigned timeIdx OPM_UNUSED)
+    { }
+
+    void postSatFuncUpdate_(const ElementContext& elemCtx OPM_UNUSED,
+                            unsigned scvIdx OPM_UNUSED,
+                            unsigned timeIdx OPM_UNUSED)
+    { }
+
+    void pvtUpdate_(const ElementContext& elemCtx OPM_UNUSED,
+                    unsigned scvIdx OPM_UNUSED,
+                    unsigned timeIdx OPM_UNUSED)
     { }
 
     const Evaluation& solventSaturation() const
@@ -399,35 +465,79 @@ public:
 template <class TypeTag, bool enableSolventV = GET_PROP_VALUE(TypeTag, EnableSolvent)>
 class BlackOilSolventExtensiveQuantities
 {
+    typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) Implementation;
+
+    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
+    typedef typename GET_PROP_TYPE(TypeTag, IntensiveQuantities) IntensiveQuantities;
+    typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) ExtensiveQuantities;
+    typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
+
+    static constexpr unsigned gasPhaseIdx = FluidSystem::gasPhaseIdx;
 
 public:
     /*!
-     * \brief Update the extensive quantities needed to handle solvents from the primary variables.
+     * \brief Generic update method which uses the pressure potential gradients
      */
-    template <class Context>
-    void update_(const Context& context OPM_UNUSED,
-                 unsigned spaceIdx OPM_UNUSED,
-                 unsigned timeIdx OPM_UNUSED)
-    { OPM_THROW(std::runtime_error, "TODO"); }
+    void update(const ElementContext& elemCtx,
+                unsigned scvfIdx,
+                unsigned timeIdx)
+    {
+#warning HACK
+#if 0
+        const auto& scvf = elemCtx.stencil(timeIdx).interiorFace(scvfIdx);
+        const ExtensiveQuantities& extQuants = elemCtx.extensiveQuantities(scvfIdx, timeIdx);
+        unsigned upIdx = extQuants.upstreamIndex(gasPhaseIdx);
+        const IntensiveQuantities& up = elemCtx.intensiveQuantities(upIdx, timeIdx);
+
+        Evaluation pGradNormal = 0.0;
+        const auto& pGrad = asImp_().potentialGrad(gasPhaseIdx);
+        const auto& normal = scvf.normal();
+        for (unsigned dimIdx = 0; dimIdx < normal.size(); ++dimIdx)
+            pGradNormal += pGrad[dimIdx]*normal[dimIdx];
+
+        solventVolumeFlux_ = pGradNormal*up.solventMobility();
+#endif
+    }
+
+    /*!
+     * \brief Update method which assumes that TPFA, pressure differences and
+     *        transmissibilities are used.
+     */
+    void updateTrans(const Evaluation& pDiffGas,
+                     Scalar trans,
+                     const ElementContext& elemCtx,
+                     unsigned scvfIdx,
+                     unsigned timeIdx)
+    {
+        const ExtensiveQuantities& extQuants = elemCtx.extensiveQuantities(scvfIdx, timeIdx);
+        unsigned upIdx = extQuants.upstreamIndex(gasPhaseIdx);
+        const IntensiveQuantities& up = elemCtx.intensiveQuantities(upIdx, timeIdx);
+
+        solventVolumeFlux_ = pDiffGas*up.solventMobility()*(-trans);
+    }
 
     const Evaluation& solventVolumeFlux() const
-    { OPM_THROW(std::runtime_error, "TODO"); }
+    { return solventVolumeFlux_; }
+
+private:
+    Implementation& asImp_()
+    { return *static_cast<Implementation*>(this); }
+
+    Evaluation solventVolumeFlux_;
 };
 
 template <class TypeTag>
 class BlackOilSolventExtensiveQuantities<TypeTag, false>
 {
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
     typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
 
 public:
-    /*!
-     * \brief Update the extensive quantities needed to handle solvents from the primary variables.
-     */
-    template <class Context>
-    void update_(const Context& context OPM_UNUSED,
-                 unsigned spaceIdx OPM_UNUSED,
-                 unsigned timeIdx OPM_UNUSED)
+    void update(const ElementContext& context OPM_UNUSED,
+                unsigned scvfIdx OPM_UNUSED,
+                unsigned timeIdx OPM_UNUSED)
     { }
 
     const Evaluation& solventVolumeFlux() const

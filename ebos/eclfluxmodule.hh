@@ -102,6 +102,8 @@ protected:
 template <class TypeTag>
 class EclTransExtensiveQuantities
 {
+    typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) Implementation;
+
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
@@ -110,7 +112,8 @@ class EclTransExtensiveQuantities
     typedef typename GET_PROP_TYPE(TypeTag, MaterialLaw) MaterialLaw;
 
     enum { dimWorld = GridView::dimensionworld };
-    enum { numPhases = GET_PROP_VALUE(TypeTag, NumPhases) };
+    enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
+    enum { numPhases = FluidSystem::numPhases };
 
     typedef Opm::MathToolbox<Evaluation> Toolbox;
     typedef Dune::FieldVector<Scalar, dimWorld> DimVector;
@@ -179,6 +182,9 @@ public:
     { return volumeFlux_[phaseIdx]; }
 
 protected:
+    Implementation& asImp_()
+    { return *static_cast<Implementation*>(this); }
+
     /*!
      * \brief Returns the local index of the degree of freedom in which is
      *        in upstream direction.
@@ -341,8 +347,13 @@ protected:
             else
                 volumeFlux_[phaseIdx] =
                     pressureDifference_[phaseIdx]*(Toolbox::value(up.mobility(phaseIdx))*(-trans_/faceArea_));
-
         }
+
+        asImp_().updateTrans(pressureDifference_[gasPhaseIdx],
+                             trans_/faceArea_,
+                             elemCtx,
+                             scvfIdx,
+                             timeIdx);
     }
 
     /*!
