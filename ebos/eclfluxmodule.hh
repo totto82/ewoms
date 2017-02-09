@@ -260,7 +260,8 @@ protected:
 
             // check shortcut: if the mobility of the phase is zero in the interior as
             // well as the exterior DOF, we can skip looking at the phase.
-            if (intQuantsIn.mobility(phaseIdx) < 1e-18 && intQuantsEx.mobility(phaseIdx) < 1e-18) {
+#warning hack
+            if (false && intQuantsIn.mobility(phaseIdx) < 1e-18 && intQuantsEx.mobility(phaseIdx) < 1e-18) {
                 upIdx_[phaseIdx] = interiorDofIdx_;
                 dnIdx_[phaseIdx] = exteriorDofIdx_;
                 pressureDifference_[phaseIdx] = 0.0;
@@ -322,7 +323,7 @@ protected:
 
             // apply the threshold pressure for the intersection. note that the concept
             // of threshold pressure is a quite big hack that only makes sense for ECL
-            // datasets. (and even there its physical justification is quite
+            // datasets. (and even there, its physical justification is quite
             // questionable IMO.)
             if (std::abs(Toolbox::value(pressureDifference_[phaseIdx])) > thpres_) {
                 if (pressureDifference_[phaseIdx] < 0.0)

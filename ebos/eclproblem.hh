@@ -868,6 +868,7 @@ public:
     {
         rate = 0.0;
 
+        /*
         if (!GET_PROP_VALUE(TypeTag, DisableWells)) {
             wellManager_.computeTotalRatesForDof(rate, context, spaceIdx, timeIdx);
 
@@ -877,11 +878,12 @@ public:
             for (unsigned eqIdx = 0; eqIdx < numEq; ++ eqIdx)
                 rate[eqIdx] /= this->model().dofTotalVolume(globalDofIdx);
         }
+        */
 
         typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
         unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
         if (globalDofIdx < 100)
-            rate[Indices::contiSolventEqIdx] = 0.001; // mol/m^3/s
+            rate[Indices::contiSolventEqIdx] = 1e-5; // kg/m^3/s
     }
 
     /*!

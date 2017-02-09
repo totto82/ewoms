@@ -205,6 +205,10 @@ public:
             Toolbox::template decay<UpEval>(upQuants.solventDensity());
 
         flux[contiSolventEqIdx] += volFlux*upRhoSol;
+
+        if (volFlux != 0) {
+            std::cout << "flux[contiSolventEqIdx] = " << flux[contiSolventEqIdx] << "\n";
+        }
     }
 
     /*!
@@ -251,7 +255,8 @@ public:
     static Scalar computeResidualError(const EqVector& resid)
     {
         // do not weight the residual of solvents when it comes to convergence
-        return std::abs(Toolbox::scalarValue(resid[contiSolventEqIdx]));
+#warning HACK
+        return 0.0; // std::abs(Toolbox::scalarValue(resid[contiSolventEqIdx]));
     }
 
     template <class DofEntity>
@@ -474,6 +479,8 @@ class BlackOilSolventExtensiveQuantities
     typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) ExtensiveQuantities;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
 
+    typedef Opm::MathToolbox<Evaluation> Toolbox;
+
     static constexpr unsigned gasPhaseIdx = FluidSystem::gasPhaseIdx;
 
 public:
@@ -511,11 +518,15 @@ public:
                      unsigned scvfIdx,
                      unsigned timeIdx)
     {
-        const ExtensiveQuantities& extQuants = elemCtx.extensiveQuantities(scvfIdx, timeIdx);
+        const ExtensiveQuantities& extQuants = asImp_();
+        unsigned inIdx = extQuants.interiorIndex();
         unsigned upIdx = extQuants.upstreamIndex(gasPhaseIdx);
         const IntensiveQuantities& up = elemCtx.intensiveQuantities(upIdx, timeIdx);
 
-        solventVolumeFlux_ = pDiffGas*up.solventMobility()*(-trans);
+        if (upIdx == inIdx)
+            solventVolumeFlux_ = pDiffGas*up.solventMobility()*(-trans);
+        else
+            solventVolumeFlux_ = pDiffGas*Toolbox::value(up.solventMobility())*(-trans);
     }
 
     const Evaluation& solventVolumeFlux() const
