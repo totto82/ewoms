@@ -1127,7 +1127,7 @@ public:
                 continue;
 
             modelRate.setVolumetricRate(intQuants.fluidState(), phaseIdx, volumetricRates[phaseIdx]);
-            for (unsigned eqIdx = 0; eqIdx < q.size(); ++eqIdx)
+            for (unsigned eqIdx = 0; eqIdx < numComponents; ++eqIdx)
                 q[eqIdx] += modelRate[eqIdx];
         }
 
