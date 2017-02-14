@@ -177,9 +177,9 @@ public:
         unsigned upIdx = static_cast<unsigned>(extQuants.upstreamIndex(gasPhaseIdx));
         const IntensiveQuantities& up = elemCtx.intensiveQuantities(upIdx, timeIdx);
         if (upIdx == interiorIdx)
-            SolventModule::template addFlux<Evaluation>(flux, extQuants, up);
+            SolventModule::template computeFlux<Evaluation>(flux, extQuants, up);
         else
-            SolventModule::template addFlux<Scalar>(flux, extQuants, up);
+            SolventModule::template computeFlux<Scalar>(flux, extQuants, up);
     }
 
     /*!

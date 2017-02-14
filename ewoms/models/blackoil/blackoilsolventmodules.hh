@@ -192,9 +192,9 @@ public:
     }
 
     template <class UpEval>
-    static void addFlux(RateVector& flux,
-                        const ExtensiveQuantities& extQuants,
-                        const IntensiveQuantities& upQuants)
+    static void computeFlux(RateVector& flux,
+                            const ExtensiveQuantities& extQuants,
+                            const IntensiveQuantities& upQuants)
     {
         if (!enableSolvent)
             return;
@@ -204,11 +204,7 @@ public:
         const UpEval& upRhoSol =
             Toolbox::template decay<UpEval>(upQuants.solventDensity());
 
-        flux[contiSolventEqIdx] += volFlux*upRhoSol;
-
-        if (volFlux != 0) {
-            std::cout << "flux[contiSolventEqIdx] = " << flux[contiSolventEqIdx] << "\n";
-        }
+        flux[contiSolventEqIdx] = volFlux*upRhoSol;
     }
 
     /*!
