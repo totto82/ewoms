@@ -441,7 +441,6 @@ private:
             iconData[offset + ICON_I_INDEX] = completion.getI() + 1;
             iconData[offset + ICON_J_INDEX] = completion.getJ() + 1;
             iconData[offset + ICON_K_INDEX] = completion.getK() + 1;
-            iconData[offset + ICON_STATUS_INDEX] = (completion.getState() == Opm::WellCompletion::OPEN)?1:0;
 
             int eclDirection;
             switch (completion.getDirection()) {
