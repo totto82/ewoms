@@ -66,6 +66,7 @@ class BlackOilIntensiveQuantities
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
     typedef typename GET_PROP_TYPE(TypeTag, FluxModule) FluxModule;
 
+    enum { enableSolvent = GET_PROP_VALUE(TypeTag, EnableSolvent) };
     enum { numPhases = GET_PROP_VALUE(TypeTag, NumPhases) };
     enum { numComponents = GET_PROP_VALUE(TypeTag, NumComponents) };
     enum { waterCompIdx = FluidSystem::waterCompIdx };
@@ -119,9 +120,14 @@ public:
         if (priVars.primaryVarsMeaning() == PrimaryVariables::Sw_po_Sg)
             // -> threephase case
             Sg = priVars.makeEvaluation(Indices::compositionSwitchIdx, timeIdx);
-        else if (priVars.primaryVarsMeaning() == PrimaryVariables::Sw_pg_Rv)
+        else if (priVars.primaryVarsMeaning() == PrimaryVariables::Sw_pg_Rv) {
             // -> gas-water case
             Sg = 1 - Sw;
+
+            // deal with solvent
+            if (enableSolvent)
+                Sg -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
+        }
         else {
             assert(priVars.primaryVarsMeaning() == PrimaryVariables::Sw_po_Rs);
             // -> oil-water case
@@ -132,6 +138,11 @@ public:
         Opm::Valgrind::CheckDefined(Sw);
 
         Evaluation So = 1.0 - Sw - Sg;
+
+        // deal with solvent
+        if (enableSolvent)
+            So -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
+
         fluidState_.setSaturation(waterPhaseIdx, Sw);
         fluidState_.setSaturation(gasPhaseIdx, Sg);
         fluidState_.setSaturation(oilPhaseIdx, So);
@@ -159,7 +170,7 @@ public:
         // calculate relative permeabilities. note that we store the result into the
         // mobility_ class attribute. the division by the phase viscosity happens later.
         MaterialLaw::relativePermeabilities(mobility_, materialParams, fluidState_);
-        Valgrind::CheckDefined(mobility_);
+        Opm::Valgrind::CheckDefined(mobility_);
 
         SolventIntensiveQuantities::postSatFuncUpdate_(elemCtx, dofIdx, timeIdx);
 
