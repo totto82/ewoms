@@ -32,10 +32,12 @@
 #include <ewoms/io/vtkblackoilsolventmodule.hh>
 
 #include <opm/material/fluidsystems/blackoilpvt/SolventPvt.hpp>
+#include <opm/material/common/Tabulated1DFunction.hpp>
 
 #if HAVE_OPM_PARSER
 #include <opm/parser/eclipse/Deck/Deck.hpp>
 #include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
+#include <opm/parser/eclipse/EclipseState/Tables/SsfnTable.hpp>
 #endif
 
 #include <opm/common/Valgrind.hpp>
@@ -61,6 +63,7 @@ class BlackOilSolventModule
     typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
     typedef typename GET_PROP_TYPE(TypeTag, IntensiveQuantities) IntensiveQuantities;
     typedef typename GET_PROP_TYPE(TypeTag, ExtensiveQuantities) ExtensiveQuantities;
+    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
     typedef typename GET_PROP_TYPE(TypeTag, Model) Model;
     typedef typename GET_PROP_TYPE(TypeTag, Simulator) Simulator;
@@ -70,6 +73,8 @@ class BlackOilSolventModule
 
     typedef Opm::MathToolbox<Evaluation> Toolbox;
     typedef Opm::SolventPvt<Scalar> SolventPvt;
+
+    typedef typename Opm::Tabulated1DFunction<Scalar> TabulatedFunction;
 
     static constexpr unsigned solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr unsigned contiSolventEqIdx = Indices::contiSolventEqIdx;
@@ -101,6 +106,31 @@ public:
             return; // solvent treatment is supposed to be disabled
 
         solventPvt_.initFromDeck(deck, eclState);
+
+        // initialize the objects which deal with the SSFN keyword
+        const auto& tableManager = eclState.getTableManager();
+        const auto& ssfnTables = tableManager.getSsfnTables();
+        unsigned numSatRegions = tableManager.getTabdims().getNumSatTables();
+        ssfnKrg_.resize(numSatRegions);
+        ssfnKrs_.resize(numSatRegions);
+        for (unsigned satRegionIdx = 0; satRegionIdx < numSatRegions; ++ satRegionIdx) {
+            const auto& ssfnTable = ssfnTables.template getTable<Opm::SsfnTable>(satRegionIdx);
+            ssfnKrg_[satRegionIdx].setXYContainers(ssfnTable.getSolventFractionColumn(),
+                                                   ssfnTable.getGasRelPermMultiplierColumn(),
+                                                   /*sortInput=*/true);
+            ssfnKrs_[satRegionIdx].setXYContainers(ssfnTable.getSolventFractionColumn(),
+                                                   ssfnTable.getSolventRelPermMultiplierColumn(),
+                                                   /*sortInput=*/true);
+        }
+
+        // initialize the Cartesian element index to saturation index map
+        const auto& gridProps = eclState.get3DProperties();
+        if (gridProps.hasDeckIntGridProperty("SATNUM")) {
+            const std::vector<int>& satnumData = gridProps.getIntGridProperty("SATNUM").getData();
+            cartCellIdxToSatNum_.resize(satnumData.size());
+            for (unsigned cartElemIdx = 0; cartElemIdx < satnumData.size(); ++cartElemIdx)
+                cartCellIdxToSatNum_[cartElemIdx] = satnumData[cartElemIdx] - 1;
+        }
     }
 
     // TODO(?): full init without opm-parser
@@ -251,8 +281,7 @@ public:
     static Scalar computeResidualError(const EqVector& resid)
     {
         // do not weight the residual of solvents when it comes to convergence
-#warning HACK
-        return 0.0; // std::abs(Toolbox::scalarValue(resid[contiSolventEqIdx]));
+        return std::abs(Toolbox::scalarValue(resid[contiSolventEqIdx]));
     }
 
     template <class DofEntity>
@@ -295,13 +324,61 @@ public:
     static const SolventPvt& solventPvt()
     { return solventPvt_; }
 
+    static const TabulatedFunction& ssfnKrg(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = 0;
+        if (!cartCellIdxToSatNum_.empty()) {
+            const auto& cartMapper = elemCtx.simulator().gridManager().cartesianIndexMapper();
+            unsigned elemIdx = elemCtx.globalSpaceIndex(scvIdx, timeIdx);
+            unsigned cartElemIdx = cartMapper.cartesianIndex(elemIdx);
+
+            satnumRegionIdx = cartCellIdxToSatNum_[cartElemIdx];
+        }
+
+        return ssfnKrg_[satnumRegionIdx];
+    }
+
+    static const TabulatedFunction& ssfnKrs(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = 0;
+        if (!cartCellIdxToSatNum_.empty()) {
+            const auto& cartMapper = elemCtx.simulator().gridManager().cartesianIndexMapper();
+            unsigned elemIdx = elemCtx.globalSpaceIndex(scvIdx, timeIdx);
+            unsigned cartElemIdx = cartMapper.cartesianIndex(elemIdx);
+
+            satnumRegionIdx = cartCellIdxToSatNum_[cartElemIdx];
+        }
+
+        return ssfnKrs_[satnumRegionIdx];
+    }
+
 private:
     static SolventPvt solventPvt_;
+
+    static std::vector<unsigned> cartCellIdxToSatNum_;
+    static std::vector<TabulatedFunction> ssfnKrg_; // the krg(Fs) column of the SSFN table
+    static std::vector<TabulatedFunction> ssfnKrs_; // the krs(Fs) column of the SSFN table
 };
 
 template <class TypeTag, bool enableSolventV>
 typename BlackOilSolventModule<TypeTag, enableSolventV>::SolventPvt
 BlackOilSolventModule<TypeTag, enableSolventV>::solventPvt_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<unsigned>
+BlackOilSolventModule<TypeTag, enableSolventV>::cartCellIdxToSatNum_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::TabulatedFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::ssfnKrg_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::TabulatedFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::ssfnKrs_;
 
 /*!
  * \ingroup BlackOil
@@ -356,14 +433,17 @@ public:
      * all saturations and relative permeabilities must be final. (i.e., the "hydrocarbon
      * saturations".)
      */
-    void postSatFuncUpdate_(const ElementContext& elemCtx OPM_UNUSED,
-                            unsigned scvIdx OPM_UNUSED,
-                            unsigned timeIdx OPM_UNUSED)
+    void postSatFuncUpdate_(const ElementContext& elemCtx,
+                            unsigned scvIdx,
+                            unsigned timeIdx)
     {
         // revert the gas "saturation" of the fluid state back to the saturation of the
         // hydrocarbon gas.
         auto& fs = asImp_().fluidState_;
         fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+
+        const auto& ssfnKrg = SolventModule::ssfnKrg(elemCtx, scvIdx, timeIdx);
+        const auto& ssfnKrs = SolventModule::ssfnKrs(elemCtx, scvIdx, timeIdx);
 
         // compute the mobility of the solvent "phase". this only covers the "immiscible"
         // case.
@@ -373,10 +453,9 @@ public:
             Evaluation Fhydgas = hydrocarbonSaturation_/Stot;
             Evaluation Fsolgas = solventSaturation_/Stot;
 
-#warning TODO: implement SSFN
             Evaluation& krg = asImp_().mobility_[gasPhaseIdx];
-            solventMobility_ = krg * Fsolgas;
-            krg *= Fhydgas;
+            solventMobility_ = krg * ssfnKrs.eval(Fsolgas);
+            krg *= ssfnKrg.eval(Fhydgas);
         }
     }
 
@@ -511,7 +590,7 @@ public:
     void updateTrans(const Evaluation& pDiffGas,
                      Scalar trans,
                      const ElementContext& elemCtx,
-                     unsigned scvfIdx,
+                     unsigned scvfIdx OPM_UNUSED,
                      unsigned timeIdx)
     {
         const ExtensiveQuantities& extQuants = asImp_();
