@@ -350,10 +350,11 @@ protected:
                     pressureDifference_[phaseIdx]*(Toolbox::value(up.mobility(phaseIdx))*(-trans_/faceArea_));
         }
 
+        // BUG! should be pressureDifference_[solvent] !!!!
         asImp_().updateTrans(pressureDifference_[gasPhaseIdx],
                              trans_/faceArea_,
                              elemCtx,
-                             scvfIdx,
+                             upstreamIndex_(gasPhaseIdx), //HACK. Pass upstream index instead of unused scvfIdx
                              timeIdx);
     }
 

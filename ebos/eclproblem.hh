@@ -878,10 +878,11 @@ public:
                 rate[eqIdx] /= this->model().dofTotalVolume(globalDofIdx);
         }
 
-        typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
-        unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
-        if (globalDofIdx < 100)
-            rate[Indices::contiSolventEqIdx] = 1e-5; // kg/m^3/s
+        // Hack to include a source term
+        //typedef typename GET_PROP_TYPE(TypeTag, Indices) Indices;
+        //unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+        //if (globalDofIdx < 100)
+        //rate[Indices::contiSolventEqIdx] = 1e-5; // kg/m^3/s
     }
 
     /*!

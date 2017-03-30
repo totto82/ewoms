@@ -449,7 +449,7 @@ public:
         // case.
         solventMobility_ = 0.0;
         Evaluation Stot = hydrocarbonSaturation_ + solventSaturation_;
-        if (Stot > 0.0) {
+        if (Stot > 1e-12) { // apply a cut-off
             Evaluation Fhydgas = hydrocarbonSaturation_/Stot;
             Evaluation Fsolgas = solventSaturation_/Stot;
 
@@ -474,13 +474,13 @@ public:
         const auto& solventPvt = SolventModule::solventPvt();
 
         unsigned pvtRegionIdx = iq.pvtRegionIndex();
-        Scalar rhoRef = solventPvt.referenceDensity(pvtRegionIdx);
+        solventRefDensity_ = solventPvt.referenceDensity(pvtRegionIdx);
         const Evaluation& T = fs.temperature(gasPhaseIdx);
         const Evaluation& p = fs.pressure(gasPhaseIdx);
-        const Evaluation& b = solventPvt.inverseFormationVolumeFactor(pvtRegionIdx, T, p);
+        solventInvFormationVolumeFactor_ = solventPvt.inverseFormationVolumeFactor(pvtRegionIdx, T, p);
 
 #warning TODO: implement "miscibility"
-        solventDensity_ = b*rhoRef;
+        solventDensity_ = solventInvFormationVolumeFactor_*solventRefDensity_;
         solventMobility_ /= solventPvt.viscosity(pvtRegionIdx, T, p);
     }
 
@@ -493,6 +493,13 @@ public:
     const Evaluation& solventMobility() const
     { return solventMobility_; }
 
+    const Evaluation& solventInverseFormationVolumeFactor() const
+    { return solventInvFormationVolumeFactor_; }
+
+    // This could be stored pr pvtRegion instead
+    const Scalar& solventRefDensity() const
+    { return solventRefDensity_; }
+
 protected:
     Implementation& asImp_()
     { return *static_cast<Implementation*>(this); }
@@ -501,6 +508,9 @@ protected:
     Evaluation solventSaturation_;
     Evaluation solventDensity_;
     Evaluation solventMobility_;
+    Evaluation solventInvFormationVolumeFactor_;
+
+    Scalar solventRefDensity_;
 };
 
 template <class TypeTag>
@@ -595,7 +605,9 @@ public:
     {
         const ExtensiveQuantities& extQuants = asImp_();
         unsigned inIdx = extQuants.interiorIndex();
-        unsigned upIdx = extQuants.upstreamIndex(gasPhaseIdx);
+        // For some reason extQuants.upstreamIndex(gasPhaseIdx) gives the wrong upstream Idx
+        // As a temporary hack. The upstream Idx is passed via the unused scvfIdx
+        unsigned upIdx = scvfIdx; //extQuants.upstreamIndex(gasPhaseIdx);
         const IntensiveQuantities& up = elemCtx.intensiveQuantities(upIdx, timeIdx);
 
         if (upIdx == inIdx)
