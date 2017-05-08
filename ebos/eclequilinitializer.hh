@@ -101,10 +101,8 @@ public:
         unsigned numEquilElems = gridManager.equilGrid().size(0);
         unsigned numCartesianElems = gridManager.cartesianSize();
         typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
-        typedef Opm::ThreePhaseMaterialTraits<double,
-                                              /*wettingPhaseIdx=*/FluidSystem::waterPhaseIdx,
-                                              /*nonWettingPhaseIdx=*/FluidSystem::oilPhaseIdx,
-                                              /*gasPhaseIdx=*/FluidSystem::gasPhaseIdx> EquilTraits;
+        typedef typename GET_PROP_TYPE(TypeTag, MaterialLaw) MartialLaw;
+        typedef typename MartialLaw :: Traits  EquilTraits;
 
         // create a separate instance of the material law manager just because opm-core
         // only supports double as the type for scalars (but ebos may use float or quad)

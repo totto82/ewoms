@@ -630,13 +630,27 @@ template <class TypeTag>
 class BlackOilSolventExtensiveQuantities<TypeTag, false>
 {
     typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
-    typedef typename GET_PROP_TYPE(TypeTag, Evaluation) Evaluation;
+    typedef typename GET_PROP_TYPE(TypeTag, Evaluation)     Evaluation;
+    typedef typename GET_PROP_TYPE(TypeTag, Scalar)         Scalar;
 
 public:
     void update(const ElementContext& context OPM_UNUSED,
                 unsigned scvfIdx OPM_UNUSED,
                 unsigned timeIdx OPM_UNUSED)
     { }
+
+
+    /*!
+     * \brief Update method which assumes that TPFA, pressure differences and
+     *        transmissibilities are used.
+     */
+    void updateTrans(const Evaluation& pDiffGas OPM_UNUSED,
+                     Scalar trans OPM_UNUSED,
+                     const ElementContext& elemCtx OPM_UNUSED,
+                     unsigned scvfIdx OPM_UNUSED,
+                     unsigned timeIdx OPM_UNUSED)
+    {
+    }
 
     const Evaluation& solventVolumeFlux() const
     { OPM_THROW(std::runtime_error, "solventVolumeFlux() called but solvents are disabled"); }

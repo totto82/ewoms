@@ -135,10 +135,14 @@ private:
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
 
-    typedef Opm::ThreePhaseMaterialTraits<Scalar,
-                                          /*wettingPhaseIdx=*/FluidSystem::waterPhaseIdx,
-                                          /*nonWettingPhaseIdx=*/FluidSystem::oilPhaseIdx,
-                                          /*gasPhaseIdx=*/FluidSystem::gasPhaseIdx> Traits;
+    //typedef Opm::ThreePhaseMaterialTraits<Scalar,
+    //                                      /*wettingPhaseIdx=*/FluidSystem::waterPhaseIdx,
+    //                                      /*nonWettingPhaseIdx=*/FluidSystem::oilPhaseIdx,
+    //                                      /*gasPhaseIdx=*/FluidSystem::gasPhaseIdx> Traits;
+
+    typedef Opm::TwoPhaseMaterialTraits<Scalar,
+                                        /*wettingPhaseIdx=*/FluidSystem::waterPhaseIdx,
+                                        /*nonWettingPhaseIdx=*/FluidSystem::oilPhaseIdx> Traits;
 
 public:
     typedef Opm::EclMaterialLawManager<Traits> EclMaterialLawManager;
@@ -223,7 +227,7 @@ SET_BOOL_PROP(EclBaseProblem, EnableDebuggingChecks, true);
 // ebos handles the SWATINIT keyword by default
 SET_BOOL_PROP(EclBaseProblem, EnableSwatinit, true);
 
-SET_BOOL_PROP(EclBaseProblem, EnableSolvent, true);
+SET_BOOL_PROP(EclBaseProblem, EnableSolvent, false);
 } // namespace Properties
 
 /*!
