@@ -793,7 +793,7 @@ public:
             sol.insert ("SOMAX", Opm::UnitSystem::measure::identity, std::move(soMax_), Opm::data::TargetType::RESTART_SOLUTION);
 
         if (sSol_.size() > 0)
-            sol.insert ("SSOL", Opm::UnitSystem::measure::identity, std::move(sSol_), Opm::data::TargetType::RESTART_SOLUTION);
+            sol.insert ("SSOLVENT", Opm::UnitSystem::measure::identity, std::move(sSol_), Opm::data::TargetType::RESTART_SOLUTION);
 
         if (cPolymer_.size() > 0)
             sol.insert ("POLYMER", Opm::UnitSystem::measure::identity, std::move(cPolymer_), Opm::data::TargetType::RESTART_SOLUTION);
@@ -943,8 +943,14 @@ public:
             rv_[elemIdx] = sol.data("RV")[globalDofIndex];
         }
 
-        if ( sSol_.size() > 0 && sol.has( "SSOL" ) ) {
-            sSol_[elemIdx] = sol.data("SSOL")[globalDofIndex];
+        if ( sSol_.size() > 0 ) {
+            // keep the SSOL option for backward compatibility
+            // should be removed in a year or 04.2019
+            if (sol.has( "SSOL" ) ) {
+                sSol_[elemIdx] = sol.data("SSOL")[globalDofIndex];
+            } else if ( sol.has( "SSOLVENT" )  ) {
+                sSol_[elemIdx] = sol.data("SSOLVENT")[globalDofIndex];
+            }
         }
 
         if ( cPolymer_.size() > 0 && sol.has("POLYMER" ) ) {
