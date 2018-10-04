@@ -46,7 +46,7 @@
 
 #include <iostream>
 #include <sstream>
-
+#include <memory>
 #include <unistd.h>
 
 namespace Ewoms {
@@ -127,7 +127,12 @@ NEW_PROP_TAG(ConvergenceWriter);
  * This value can (and for the porous media models will) be changed to account for grid
  * scaling and other effects.
  */
-NEW_PROP_TAG(NewtonRawTolerance);
+NEW_PROP_TAG(NewtonTolerance);
+
+
+
+NEW_PROP_TAG(NewtonSumTolerance);
+
 
 //! The maximum error which may occur in a simulation before the
 //! Newton method for the time step is aborted
@@ -146,12 +151,16 @@ NEW_PROP_TAG(NewtonTargetIterations);
 //! Number of maximum iterations for the Newton method.
 NEW_PROP_TAG(NewtonMaxIterations);
 
+NEW_PROP_TAG(NumEq);
+
 // set default values for the properties
 SET_TYPE_PROP(NewtonMethod, NewtonMethod, Ewoms::NewtonMethod<TypeTag>);
 SET_TYPE_PROP(NewtonMethod, NewtonConvergenceWriter, Ewoms::NullConvergenceWriter<TypeTag>);
 SET_BOOL_PROP(NewtonMethod, NewtonWriteConvergence, false);
 SET_BOOL_PROP(NewtonMethod, NewtonVerbose, true);
-SET_SCALAR_PROP(NewtonMethod, NewtonRawTolerance, 1e-8);
+SET_SCALAR_PROP(NewtonMethod, NewtonTolerance, 1e-5);
+SET_SCALAR_PROP(NewtonMethod, NewtonSumTolerance, 1e-8);
+
 // set the abortion tolerace to some very large value. if not
 // overwritten at run-time this basically disables abortions
 SET_SCALAR_PROP(NewtonMethod, NewtonMaxError, 1e100);
@@ -187,6 +196,8 @@ class NewtonMethod
     typedef typename GET_PROP_TYPE(TypeTag, LinearSolverBackend) LinearSolverBackend;
     typedef typename GET_PROP_TYPE(TypeTag, NewtonConvergenceWriter) ConvergenceWriter;
 
+    static const int numEq = GET_PROP_VALUE(TypeTag, NumEq);
+
     typedef typename Dune::MPIHelper::MPICommunicator Communicator;
     typedef Dune::CollectiveCommunication<Communicator> CollectiveCommunication;
 
@@ -200,8 +211,9 @@ public:
     {
         lastError_ = 1e100;
         error_ = 1e100;
-        tolerance_ = EWOMS_GET_PARAM(TypeTag, Scalar, NewtonRawTolerance);
-
+        tolerance_ = EWOMS_GET_PARAM(TypeTag, Scalar, NewtonTolerance);
+        sumTolerance_ = EWOMS_GET_PARAM(TypeTag, Scalar, NewtonSumTolerance);
+        relaxedTolerance_ = 1e9;
         numIterations_ = 0;
     }
 
@@ -224,11 +236,15 @@ public:
         EWOMS_REGISTER_PARAM(TypeTag, int, NewtonMaxIterations,
                              "The maximum number of Newton iterations per time "
                              "step");
-        EWOMS_REGISTER_PARAM(TypeTag, Scalar, NewtonRawTolerance,
-                             "The maximum raw error tolerated by the Newton"
+        EWOMS_REGISTER_PARAM(TypeTag, Scalar, NewtonTolerance,
+                             "The maximum error tolerated by the Newton"
                              "method for considering a solution to be "
                              "converged");
-        EWOMS_REGISTER_PARAM(TypeTag, Scalar, NewtonMaxError,
+        EWOMS_REGISTER_PARAM(TypeTag, Scalar, NewtonSumTolerance,
+                             "The maximum error tolerated by the Newton"
+                             "method for considering a solution to be "
+                             "converged");
+        EWOMS_REGISTER_PARAM(TypeTag, Scalar, NewtonMaxError,                             
                              "The maximum error tolerated by the Newton "
                              "method to which does not cause an abort");
     }
@@ -247,7 +263,11 @@ public:
      *        tolerance.
      */
     bool converged() const
-    { return error_ <= tolerance(); }
+    {
+        if (asImp_().numIterations() > 8)
+            return (error_ < relaxedTolerance_ && sumOfError_ < sumTolerance_) ;
+
+        return error_ <= tolerance() && sumOfError_ <= sumTolerance_; }
 
     /*!
      * \brief Returns a reference to the object describing the current physical problem.
@@ -658,6 +678,10 @@ protected:
         // calculate the error as the maximum weighted tolerance of
         // the solution's residual
         error_ = 0;
+        Dune::FieldVector<Scalar, numEq> componentSumError;
+        std::fill(componentSumError.begin(), componentSumError.end(), 0.0);
+        Scalar sumPv = 0.0;
+        const Scalar dt = simulator_.timeStepSize();
         for (unsigned dofIdx = 0; dofIdx < currentResidual.size(); ++dofIdx) {
             // do not consider auxiliary DOFs for the error
             if (dofIdx >= model().numGridDof() || model().dofTotalVolume(dofIdx) <= 0.0)
@@ -670,17 +694,42 @@ protected:
             }
 
             const auto& r = currentResidual[dofIdx];
-            for (unsigned eqIdx = 0; eqIdx < r.size(); ++eqIdx)
-                error_ = Opm::max(std::abs(r[eqIdx] * model().eqWeight(dofIdx, eqIdx)), error_);
+            const double pvValue = simulator_.problem().porosity(dofIdx) * model().dofTotalVolume( dofIdx );
+
+            for (unsigned eqIdx = 0; eqIdx < r.size(); ++eqIdx) {
+                Scalar tmpError = r[eqIdx] * dt * model().eqWeight(dofIdx, eqIdx) / pvValue;
+                Scalar tmpError2 = r[eqIdx] * model().eqWeight(dofIdx, eqIdx);
+                sumPv += pvValue;
+
+                error_ = Opm::max(std::abs(tmpError), error_);
+                componentSumError[eqIdx] += tmpError2;
+            }
         }
 
         // take the other processes into account
         error_ = comm_.max(error_);
+        componentSumError = comm_.sum(componentSumError);
+        sumPv = comm_.sum(sumPv);
+
+        componentSumError /= sumPv;
+        componentSumError *= dt;
+
+        sumOfError_ = 0;
+        for (unsigned eqIdx = 0; eqIdx < numEq; ++eqIdx) {
+            sumOfError_ = std::max(std::abs(componentSumError[eqIdx]), sumOfError_);
+        }
 
         // make sure that the error never grows beyond the maximum
         // allowed one
         if (error_ > newtonMaxError)
             throw Opm::NumericalIssue("Newton: Error "+std::to_string(double(error_))
+                                        +" is larger than maximum allowed error of "
+                                        +std::to_string(double(newtonMaxError)));
+
+        // make sure that the error never grows beyond the maximum
+        // allowed one
+        if (sumOfError_ > newtonMaxError)
+            throw Opm::NumericalIssue("Newton: Sum of the error "+std::to_string(double(sumOfError_))
                                         +" is larger than maximum allowed error of "
                                         +std::to_string(double(newtonMaxError)));
     }
@@ -876,7 +925,7 @@ protected:
 
         if (asImp_().verbose_()) {
             std::cout << "Newton iteration " << numIterations_ << ""
-                      << " error: " << error_
+                      << " error: " << error_ << " sum error " << sumOfError_
                       << endIterMsg().str() << "\n" << std::flush;
         }
 
@@ -952,8 +1001,11 @@ protected:
     std::ostringstream endIterMsgStream_;
 
     Scalar error_;
+    Scalar sumOfError_;
     Scalar lastError_;
     Scalar tolerance_;
+    Scalar relaxedTolerance_;
+    Scalar sumTolerance_;
 
     // actual number of iterations done so far
     int numIterations_;
