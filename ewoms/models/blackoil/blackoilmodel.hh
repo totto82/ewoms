@@ -379,13 +379,13 @@ public:
         if (GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume)) {
             switch (eqIdx) {
             case Indices::conti0EqIdx + FluidSystem::waterCompIdx:
-                return 1.0/1000.0;
+                return 1.03;
 
             case Indices::conti0EqIdx + FluidSystem::gasCompIdx:
-                return 1.0;
+                return 0.046;
 
             case Indices::conti0EqIdx + FluidSystem::oilCompIdx:
-                return 1.0/650.0;
+                return 1.33;
             }
         }
 

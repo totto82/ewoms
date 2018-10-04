@@ -687,6 +687,9 @@ protected:
             if (dofIdx >= model().numGridDof() || model().dofTotalVolume(dofIdx) <= 0.0)
                 continue;
 
+            if (!model().isLocalDof(dofIdx))
+                continue;
+
             // also do not consider DOFs which are constraint
             if (enableConstraints_()) {
                 if (constraintsMap.count(dofIdx) > 0)
