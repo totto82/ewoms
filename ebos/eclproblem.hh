@@ -227,16 +227,19 @@ SET_SCALAR_PROP(EclBaseProblem, EndTime, 1e100);
 // The chosen value means that the size of the first time step is the
 // one of the initial episode (if the length of the initial episode is
 // not millions of trillions of years, that is...)
-SET_SCALAR_PROP(EclBaseProblem, InitialTimeStepSize, 1e100);
+SET_SCALAR_PROP(EclBaseProblem, InitialTimeStepSize, 3600*24);
 
-// increase the default raw tolerance for the newton solver to 10^-4 because this is what
-// everone else seems to be doing...
-SET_SCALAR_PROP(EclBaseProblem, NewtonTolerance, 1e-4);
+// increase the default  tolerance for the newton solver to 10^-2 because this is what
+// everyone else seems to be doing...
+SET_SCALAR_PROP(EclBaseProblem, NewtonTolerance, 1e-2);
+SET_SCALAR_PROP(EclBaseProblem, NewtonSumTolerance, 1e-5);
 
 // reduce the maximum allowed Newton error to 0.1 kg/(m^3 s). The rationale is that if
 // the error is above that limit, the time step is unlikely to succeed anyway and we can
 // thus abort the futile attempt early.
-SET_SCALAR_PROP(EclBaseProblem, NewtonMaxError, 0.1);
+
+// just ignore this.
+SET_SCALAR_PROP(EclBaseProblem, NewtonMaxError, 10e9);
 
 // set the maximum number of Newton iterations to 14 because the likelyhood that a time
 // step succeeds at more than 14 Newton iteration is rather small
