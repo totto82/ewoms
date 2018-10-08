@@ -236,7 +236,7 @@ public:
         elemCtx.updateAll(elem);
 
         // update the weights of the primary variables for the context
-        model_().updatePVWeights(elemCtx);
+        model_().updateWeights(elemCtx);
 
         resize_(elemCtx);
         reset_(elemCtx);

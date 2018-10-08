@@ -236,6 +236,7 @@ class BlackOilModel
     typedef typename GET_PROP_TYPE(TypeTag, Discretization) Discretization;
     typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
     typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
+    typedef typename GET_PROP_TYPE(TypeTag, EqVector) EqVector;
 
     enum { numPhases = GET_PROP_VALUE(TypeTag, NumPhases) };
     enum { numComponents = FluidSystem::numComponents };
@@ -250,7 +251,8 @@ class BlackOilModel
 public:
     BlackOilModel(Simulator& simulator)
         : ParentType(simulator)
-    {}
+    {
+    }
 
     /*!
      * \brief Register all run-time parameters for the immiscible model.
@@ -376,19 +378,6 @@ public:
         if (globalDofIdx >= this->numGridDof())
             return 1.0;
 
-        if (GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume)) {
-            switch (eqIdx) {
-            case Indices::conti0EqIdx + FluidSystem::waterCompIdx:
-                return 1.03;
-
-            case Indices::conti0EqIdx + FluidSystem::gasCompIdx:
-                return 0.046;
-
-            case Indices::conti0EqIdx + FluidSystem::oilCompIdx:
-                return 1.33;
-            }
-        }
-
         if (SolventModule::eqApplies(eqIdx))
             return SolventModule::eqWeight(eqIdx);
 
@@ -398,8 +387,48 @@ public:
         else if (EnergyModule::eqApplies(eqIdx))
             return EnergyModule::eqWeight(eqIdx);
 
-        // it is said that all kilograms are equal!
-        return 1.0;
+        return eqWeights_[eqIdx];
+    }
+
+    void beginUpdateWeights()
+    {
+        eqWeights_ = 0.0;
+        SolventModule::beginUpdateWeight();
+    }
+
+    void updateWeights(const ElementContext& elemCtx)
+    {
+        if (!GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume))
+            return;
+
+        for (unsigned dofIdx = 0; dofIdx < elemCtx.numPrimaryDof(/*timeIdx=*/0); ++dofIdx) {
+            for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++phaseIdx) {
+                if (!FluidSystem::phaseIsActive(phaseIdx))
+                    continue;
+
+                int compIdx = Indices::canonicalToActiveComponentIndex(FluidSystem::solventComponentIndex(phaseIdx));
+                const auto& fs = elemCtx.intensiveQuantities(dofIdx, /*timeIdx=*/0).fluidState();
+                eqWeights_[compIdx] += 1.0 / Opm::getValue(fs.invB(phaseIdx));
+                Opm::Valgrind::CheckDefined(eqWeights_[compIdx]);
+            }
+        }
+
+        SolventModule::updateWeight(elemCtx);
+    }
+
+    void endUpdateWeights()
+    {
+        if (!GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume)) {
+            eqWeights_ = 1.0;
+            return;
+        }
+
+        eqWeights_ = this->gridView().comm().sum(eqWeights_);
+        int numDof = this->numGridDof();
+        int numGlobalDofs = this->gridView().comm().sum(numDof);
+        eqWeights_ /= numGlobalDofs;
+
+        SolventModule::endUpdateWeight(*this);
     }
 
     /*!
@@ -548,6 +577,8 @@ private:
         unsigned regionIdx = context.problem().pvtRegionIndex(context, dofIdx, timeIdx);
         priVars.setPvtRegionIndex(regionIdx);
     }
+
+    EqVector eqWeights_;
 };
 } // namespace Ewoms
 

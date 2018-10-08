@@ -336,7 +336,7 @@ public:
     /*!
      * \copydoc FvBaseDiscretization::updatePVWeights
      */
-    void updatePVWeights(const ElementContext& elemCtx) const
+    void updateWeights(const ElementContext& elemCtx) const
     {
         for (unsigned dofIdx = 0; dofIdx < elemCtx.numDof(/*timeIdx=*/0); ++dofIdx) {
             unsigned globalIdx = elemCtx.globalSpaceIndex(dofIdx, /*timeIdx=*/0);

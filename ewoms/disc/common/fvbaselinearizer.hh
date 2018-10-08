@@ -450,6 +450,8 @@ private:
 
         *matrix_ = 0.0;
 
+	model_().beginUpdateWeights();
+
 #ifdef _OPENMP
         // to avoid a race condition if two threads handles an exception at
         // the same time, we use an explicit lock to control access to the
@@ -516,6 +518,8 @@ private:
         }
 
         applyConstraintsToLinearization_();
+
+        model_().endUpdateWeights();
     }
 
     // linearize an element in the interior of the process' grid partition

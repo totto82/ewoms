@@ -1532,14 +1532,21 @@ public:
         return oss.str();
     }
 
+    void beginUpdateWeights()
+    { }
+
     /*!
-     * \brief Update the weights of all primary variables within an
-     *        element given the complete set of intensive quantities
+     * \brief Update the weights of all primary variables and equations
+     *        within an element given the complete set of intensive quantities
      *
      * \copydetails Doxygen::ecfvElemCtxParam
      */
-    void updatePVWeights(const ElementContext& elemCtx OPM_UNUSED) const
+    void updateWeights(const ElementContext& elemCtx OPM_UNUSED)
     { }
+
+    void endUpdateWeights()
+    { }
+
 
     /*!
      * \brief Add an module for writing visualization output after a timestep.

@@ -184,7 +184,7 @@ public:
         elemCtx.updateAllIntensiveQuantities();
 
         // update the weights of the primary variables for the context
-        model_().updatePVWeights(elemCtx);
+        model_().updateWeights(elemCtx);
 
         // resize the internal arrays of the linearizer
         resize_(elemCtx);
@@ -248,6 +248,8 @@ protected:
     const Problem& problem_() const
     { return simulatorPtr_->problem(); }
     const Model& model_() const
+    { return simulatorPtr_->model(); }
+    Model& model_()
     { return simulatorPtr_->model(); }
 
     /*!

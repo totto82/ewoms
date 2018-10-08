@@ -535,12 +535,57 @@ public:
         return "conti^solvent";
     }
 
+    static void beginUpdateWeight() {
+
+        if (!enableSolvent)
+            return;
+
+        eqWeight_ = 0.0;
+    }
+
+    static void updateWeight(const ElementContext& elemCtx)
+    {
+
+        if (!enableSolvent)
+            return;
+
+        if (!GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume))
+            return;
+
+        for (unsigned dofIdx = 0; dofIdx < elemCtx.numPrimaryDof(/*timeIdx=*/0); ++dofIdx) {
+            for (unsigned phaseIdx = 0; phaseIdx < numPhases; ++phaseIdx) {
+                const auto& intQuants = elemCtx.intensiveQuantities(dofIdx, /*timeIdx=*/0);
+                eqWeight_ += 1.0 / Opm::getValue(intQuants.solventInverseFormationVolumeFactor());
+                Opm::Valgrind::CheckDefined(eqWeight_);
+            }
+        }
+    }
+
+    static void endUpdateWeight(const Model& model) {
+
+        if (!enableSolvent)
+            return;
+
+        if (!GET_PROP_VALUE(TypeTag, BlackoilConserveSurfaceVolume)) {
+            eqWeight_ = 1.0;
+            return;
+        }
+
+        eqWeight_ = model.gridView().comm().sum(eqWeight_);
+        int numDof = model.numGridDof();
+        int numGlobalDofs = model.gridView().comm().sum(numDof);
+        eqWeight_ /= numGlobalDofs;
+
+    }
+
+
+
     static Scalar eqWeight(unsigned eqIdx OPM_OPTIM_UNUSED)
     {
         assert(eqApplies(eqIdx));
 
         // TODO: it may be beneficial to chose this differently.
-        return static_cast<Scalar>(1.0);
+        return eqWeight_;
     }
 
     template <class LhsEval>
@@ -800,6 +845,8 @@ private:
     static std::vector<TabulatedFunction> tlPMixTable_; // the tlpmixpa(Po) column of the TLPMIXPA table
 
     static bool isMiscible_;
+
+    static Scalar eqWeight_;
 };
 
 template <class TypeTag, bool enableSolventV>
@@ -858,6 +905,10 @@ BlackOilSolventModule<TypeTag, enableSolventV>::tlPMixTable_;
 template <class TypeTag, bool enableSolventV>
 bool
 BlackOilSolventModule<TypeTag, enableSolventV>::isMiscible_;
+
+template <class TypeTag, bool enableSolventV>
+typename BlackOilSolventModule<TypeTag, enableSolventV>::Scalar
+BlackOilSolventModule<TypeTag, enableSolventV>::eqWeight_;
 
 
 /*!
