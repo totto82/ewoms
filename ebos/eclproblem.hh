@@ -598,12 +598,6 @@ public:
         const auto& initconfig = eclState.getInitConfig();
         const auto& timeMap = simulator.vanguard().schedule().getTimeMap();
         if(initconfig.restartRequested()) {
-            // Set the start time of the simulation
-            simulator.setStartTime( timeMap.getStartTime(/*timeStepIdx=*/initconfig.getRestartStep()) );
-            simulator.setEpisodeIndex(initconfig.getRestartStep());
-            simulator.setEpisodeLength(0.0);
-            simulator.setTimeStepSize(0.0);
-
             readEclRestartSolution_();
         } else {
             readInitialCondition_();
@@ -1857,6 +1851,12 @@ private:
 
     void readEclRestartSolution_()
     {
+        // Set the start time of the simulation
+        const auto& eclState = this->simulator().vanguard().eclState();
+        const auto& initconfig = eclState.getInitConfig();
+        const auto& timeMap = this->simulator().vanguard().schedule().getTimeMap();
+        this->simulator().setEpisodeIndex(initconfig.getRestartStep());
+
         // since the EquilInitializer provides fluid states that are consistent with the
         // black-oil model, we can use naive instead of mass conservative determination
         // of the primary variables.
@@ -1882,6 +1882,13 @@ private:
             if (enablePolymer)
                  polymerConcentration_[elemIdx] = eclWriter_->eclOutputModule().getPolymerConcentration(elemIdx);
         }
+
+        // We use the suggested next time step size from the restart file
+        this->simulator().setStartTime( timeMap.getStartTime(/*timeStepIdx=*/0) );
+        this->simulator().setTime( timeMap.getTimePassedUntil(/*timeStepIdx=*/initconfig.getRestartStep() - 1 ) );
+        this->simulator().setEpisodeIndex(initconfig.getRestartStep()-2);
+        this->simulator().setEpisodeLength(0.0);
+        this->simulator().setTimeStepSize(eclWriter_->restartTimeStepSize());
     }
 
     void readExplicitInitialCondition_()

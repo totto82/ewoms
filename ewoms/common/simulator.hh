@@ -591,6 +591,7 @@ public:
                 // notify the problem that a new episode has just been
                 // started.
                 problem_->beginEpisode();
+                std::cout << "Begin episode step " << episodeIndex() + 1 << "\n ";
 
                 if (finished()) {
                     // the problem can chose to terminate the simulation in
