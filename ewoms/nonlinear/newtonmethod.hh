@@ -210,6 +210,7 @@ public:
         , convergenceWriter_(asImp_())
     {
         lastError_ = 1e100;
+        errorPvRatio_ = 1;
         error_ = 1e100;
         tolerance_ = EWOMS_GET_PARAM(TypeTag, Scalar, NewtonTolerance);
         sumTolerance_ = EWOMS_GET_PARAM(TypeTag, Scalar, NewtonSumTolerance);
@@ -264,7 +265,9 @@ public:
      */
     bool converged() const
     {
-        if (asImp_().numIterations() > 8)
+        if (errorPvRatio_ < 0.01)
+            return (error_ < relaxedTolerance_ && sumOfError_ < sumTolerance_) ;
+        else if (asImp_().numIterations() > 8)
             return (error_ < relaxedTolerance_ && sumOfError_ < sumTolerance_) ;
 
         return error_ <= tolerance() && sumOfError_ <= sumTolerance_; }
@@ -681,6 +684,7 @@ protected:
         Dune::FieldVector<Scalar, numEq> componentSumError;
         std::fill(componentSumError.begin(), componentSumError.end(), 0.0);
         Scalar sumPv = 0.0;
+        errorPvRatio_ = 0.0;
         const Scalar dt = simulator_.timeStepSize();
         for (unsigned dofIdx = 0; dofIdx < currentResidual.size(); ++dofIdx) {
             // do not consider auxiliary DOFs for the error
@@ -698,24 +702,34 @@ protected:
 
             const auto& r = currentResidual[dofIdx];
             const double pvValue = simulator_.problem().porosity(dofIdx) * model().dofTotalVolume( dofIdx );
+            sumPv += pvValue;
+            bool cnvViolated = false;
 
             for (unsigned eqIdx = 0; eqIdx < r.size(); ++eqIdx) {
                 Scalar tmpError = r[eqIdx] * dt * model().eqWeight(dofIdx, eqIdx) / pvValue;
                 Scalar tmpError2 = r[eqIdx] * model().eqWeight(dofIdx, eqIdx);
-                sumPv += pvValue;
 
                 error_ = Opm::max(std::abs(tmpError), error_);
+
+                if (std::abs(tmpError) > tolerance_) {
+                    cnvViolated = true;
+                }
                 componentSumError[eqIdx] += tmpError2;
             }
+            if (cnvViolated)
+                errorPvRatio_ += pvValue;
         }
 
         // take the other processes into account
         error_ = comm_.max(error_);
         componentSumError = comm_.sum(componentSumError);
         sumPv = comm_.sum(sumPv);
+        errorPvRatio_ = comm_.sum(errorPvRatio_);
 
         componentSumError /= sumPv;
         componentSumError *= dt;
+
+        errorPvRatio_ /= sumPv;
 
         sumOfError_ = 0;
         for (unsigned eqIdx = 0; eqIdx < numEq; ++eqIdx) {
@@ -1004,6 +1018,7 @@ protected:
     std::ostringstream endIterMsgStream_;
 
     Scalar error_;
+    Scalar errorPvRatio_;
     Scalar sumOfError_;
     Scalar lastError_;
     Scalar tolerance_;
