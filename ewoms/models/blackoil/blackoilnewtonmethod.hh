@@ -219,6 +219,11 @@ protected:
         if (maxSatDelta > dsMax_)
             satAlpha = dsMax_/maxSatDelta;
 
+
+        // avoid negative water saturations
+        if (deltaSw > currentValue[Indices::waterSaturationIdx])
+            satAlpha = std::min(satAlpha, currentValue[Indices::waterSaturationIdx] / deltaSw);
+
         for (int pvIdx = 0; pvIdx < int(numEq); ++pvIdx) {
             // calculate the update of the current primary variable. For the black-oil
             // model we limit the pressure delta relative to the pressure's current

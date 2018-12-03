@@ -359,6 +359,9 @@ public:
         if (waterEnabled)
             Sw = (*this)[Indices::waterSaturationIdx];
 
+        if (Sw < 0)
+            std::cout << "Sw " << Sw << std::endl;
+
         if (primaryVarsMeaning() == Sw_po_Sg) {
 
             // special case for cells with almost only water
