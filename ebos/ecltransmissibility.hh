@@ -350,9 +350,6 @@ public:
                                                        outsideCartElemIdx,
                                                        faceDir);
 
-                if (trans < transmissibility_threshold_)  //remove trans less than 1e-6 in given unit
-                    trans = 0.0;
-
                 trans_[isId_(elemIdx, outsideElemIdx)] = trans;
             }
         }
@@ -360,6 +357,24 @@ public:
         // potentially overwrite and/or modify  transmissibilities based on input from deck
         updateFromEclState_();
         applyEditNNC_(elemMapper);
+
+        //remove very small non-neighbouring transmissibilities
+        const auto& cartDims = cartMapper.cartesianDimensions();
+        for ( auto&& trans: trans_ ){
+            if (trans.second < transmissibility_threshold_) {
+                const auto& id = trans.first;
+                const auto& elements = isId_(id);
+                int gc1 = std::min(cartMapper.cartesianIndex(elements.first), cartMapper.cartesianIndex(elements.second));
+                int gc2 = std::max(cartMapper.cartesianIndex(elements.first), cartMapper.cartesianIndex(elements.second));
+
+                // only adjust the NNCs
+                if (gc2 - gc1 == 1 || gc2 - gc1 == cartDims[0] || gc2 - gc1 == cartDims[0]*cartDims[1] )
+                    continue;
+
+                //remove trans less than 1e-6 in given unit
+                trans.second = 0.0;
+            }
+        }
     }
 
     /*!
@@ -613,6 +628,18 @@ private:
         std::uint64_t elemBIdx = std::max(elemIdx1, elemIdx2);
 
         return (elemBIdx<<elemIdxShift) + elemAIdx;
+    }
+
+    std::pair<unsigned, unsigned> isId_(std::uint64_t id) const
+    {
+        static const unsigned elemIdxShift = 32; // bits
+
+        //unsigned elemAIdx = std::min(elemIdx1, elemIdx2);
+        //std::uint64_t elemBIdx = std::max(elemIdx1, elemIdx2);
+        unsigned elemAIdx = id;
+        unsigned elemBIdx = (id - elemAIdx) >> elemIdxShift;
+
+        return std::make_pair(elemAIdx, elemBIdx);
     }
 
     std::uint64_t directionalIsId_(unsigned elemIdx1, unsigned elemIdx2) const
