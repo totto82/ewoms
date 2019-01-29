@@ -352,6 +352,9 @@ class EclProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
     typedef typename GET_PROP_TYPE(TypeTag, Stencil) Stencil;
     typedef typename GET_PROP_TYPE(TypeTag, FluidSystem) FluidSystem;
+    typedef typename GET_PROP_TYPE(TypeTag, GlobalEqVector) GlobalEqVector;
+    typedef typename GET_PROP_TYPE(TypeTag, EqVector) EqVector;
+
 
     // Grid and world dimension
     enum { dim = GridView::dimension };
@@ -622,6 +625,8 @@ public:
         }
 
         tracerModel_.init();
+
+        massDiscrepancy_.resize(numDof, 0.0);
     }
 
     void prefetch(const Element& elem) const
@@ -812,7 +817,9 @@ public:
             // the right thing (i.e., the mass change inside the whole reservoir must be
             // equivalent to the fluxes over the grid's boundaries plus the source rates
             // specified by the problem)
-            this->model().checkConservativeness(/*tolerance=*/-1, /*verbose=*/true);
+            EqVector tmp;
+            this->model().globalStorage(tmp);
+            std::cout << "storage: " << tmp << "\n";
         }
 #endif // NDEBUG
 
@@ -841,6 +848,21 @@ public:
 
 
         updateCompositionChangeLimits_();
+
+        const auto& residual = this->model().linearizer().residual();
+
+
+        for (unsigned globalDofIdx = 0; globalDofIdx < residual.size(); globalDofIdx ++) {
+            Scalar volume = this->model().dofTotalVolume(globalDofIdx);
+            massDiscrepancy_[globalDofIdx] = residual[globalDofIdx];
+            massDiscrepancy_[globalDofIdx] *= this->simulator().timeStepSize();
+            if ( GET_PROP_VALUE(TypeTag, UseVolumetricResidual) ) {
+                massDiscrepancy_[globalDofIdx] *= volume;
+            }
+        }
+
+
+
     }
 
     /*!
@@ -1394,6 +1416,23 @@ public:
         }
 
         aquiferModel_.addToSource(rate, context, spaceIdx, timeIdx);
+
+        //if (rate.two_norm() > 1e-14)
+        //    return;
+
+        unsigned globalDofIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+        auto tmp = massDiscrepancy_[globalDofIdx];
+        tmp /= (this->simulator().timeStepSize() * this->model().dofTotalVolume(globalDofIdx));
+        for (unsigned eqIdx = 0; eqIdx < numEq; ++ eqIdx) {
+            tmp[eqIdx] = std::max( tmp[eqIdx], -1e-9);
+            tmp[eqIdx] = std::min( tmp[eqIdx], 1e-9);
+            rate[eqIdx] -= tmp[eqIdx];
+        }
+        //if (tmp.two_norm() > 1e-3) {
+        //    std::cout << tmp << std::endl;
+        //    std::abort();
+        //}
+
     }
 
     /*!
@@ -2285,6 +2324,7 @@ private:
     std::vector<Scalar> maxDRv_;
     constexpr static Scalar freeGasMinSaturation_ = 1e-7;
     std::vector<Scalar> maxOilSaturation_;
+    GlobalEqVector massDiscrepancy_;
 
     EclWellModel wellModel_;
     EclAquiferModel aquiferModel_;
