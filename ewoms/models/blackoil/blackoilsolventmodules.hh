@@ -54,9 +54,88 @@
 
 #include <dune/common/fvector.hh>
 
+#include "padua_impl.hpp"
+#include "co2_c8_dens.h"
+#include "co2_c8_visc.h"
+#include "co2_c8_enth.h"
+#include "co2_h2o_dens.h"
+#include "co2_h2o_visc.h"
+#include "co2_h2o_enth.h"
+#include "ewoms_compat.h"
+
 #include <string>
 
+BEGIN_PROPERTIES
+// create new type tag for the VTK multi-phase output
+NEW_TYPE_TAG(BlackOilSolvent);
+
+// create the property tags needed for the solvent output module
+NEW_PROP_TAG(EnablePaduaInterpolation);
+
+// set default values for usage of mixing role
+SET_BOOL_PROP(BlackOilSolvent, EnablePaduaInterpolation, false);
+
+END_PROPERTIES
+
 namespace Ewoms {
+
+struct EOS
+{
+
+    //static double TEMPERATURE = 80;
+    template<typename LhsEval>
+    static LhsEval eval(const struct poly2d_t & poly,
+                        LhsEval T, LhsEval p, LhsEval x) {
+        LhsEval val;
+        // if the linear solver overshoots and attempts to pick a solution
+        // outside of the domain, just pretend that there is no change from the
+        // boundary of the domain; hopefully the solver will regain its senses
+        // and bring us back into the domain if we don't trip it up with
+        // outlandish values.
+        LhsEval fenced_p = Opm::min(Opm::max(p, poly.lo_x), poly.up_x);
+        LhsEval fenced_x = Opm::min(Opm::max(x, poly.lo_y), poly.up_y);
+        padua_eval(&poly, 1, &fenced_p, &fenced_x, &val);
+        return val;
+    }
+
+    template<typename LhsEval>
+    static LhsEval oleic_density(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_c8_dens, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval aqueous_density(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_h2o_dens, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval oleic_viscosity(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_c8_visc, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval aqueous_viscosity(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_h2o_visc, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval oleic_enthalpy(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_c8_enth, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval aqueous_enthalpy(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        return eval(co2_h2o_enth, T, p, x);
+    }
+};
+
+
 /*!
  * \ingroup BlackOil
  * \brief Contains the high level supplements required to extend the black oil
@@ -484,6 +563,10 @@ public:
             // solvents have disabled at compile time
             return;
 
+
+        EWOMS_REGISTER_PARAM(TypeTag, bool, EnablePaduaInterpolation,
+                             "Enable PaduaInterpolation");
+
         Ewoms::VtkBlackOilSolventModule<TypeTag>::registerParameters();
     }
 
@@ -886,6 +969,7 @@ class BlackOilSolventIntensiveQuantities
 
     typedef BlackOilSolventModule<TypeTag> SolventModule;
 
+    enum { enablePaduaInterpolation = GET_PROP_VALUE(TypeTag, EnablePaduaInterpolation) };
     enum { numPhases = GET_PROP_VALUE(TypeTag, NumPhases) };
     static constexpr int solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr int oilPhaseIdx = FluidSystem::oilPhaseIdx;
@@ -1045,8 +1129,8 @@ public:
                            unsigned scvIdx,
                            unsigned timeIdx)
     {
-        const auto& iq = asImp_();
-        const auto& fs = iq.fluidState();
+        auto& iq = asImp_();
+        auto& fs = iq.fluidState_;
         const auto& solventPvt = SolventModule::solventPvt();
 
         unsigned pvtRegionIdx = iq.pvtRegionIndex();
@@ -1058,9 +1142,40 @@ public:
         solventDensity_ = solventInvFormationVolumeFactor_*solventRefDensity_;
         solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
 
-        effectiveProperties(elemCtx, scvIdx, timeIdx);
+        if (enablePaduaInterpolation) {
+            solventViscosity_ = EOS::oleic_viscosity(T, p, Evaluation(1.));
 
+            Evaluation oilSolventSat = fs.saturation(oilPhaseIdx) + solventSaturation_;
+            Evaluation FsolOil = 0.0;
+            if (oilSolventSat > cutOff)
+                FsolOil = solventSaturation_/oilSolventSat;
+
+            //assume fully miscible
+            solventDensity_ = EOS::oleic_density(T, p, FsolOil);
+
+#warning assume mole fraction = volume fraction
+            //auto& fs2 = asImp_().fluidState_;
+            fs.setDensity(oilPhaseIdx, EOS::oleic_density(T, p, FsolOil));
+            fs.setInvB(oilPhaseIdx, FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx) / fs.density(oilPhaseIdx) );
+            fs.setDensity(waterPhaseIdx, EOS::aqueous_density(T, p, Evaluation(0.0)));
+            fs.setInvB(waterPhaseIdx, FluidSystem::referenceDensity(waterPhaseIdx, pvtRegionIdx) / fs.density(waterPhaseIdx) );
+
+
+            //const Evaluation& muOil = fs.viscosity(oilPhaseIdx);
+            //const Evaluation& muWat = fs.viscosity(waterPhaseIdx);
+            //Evaluation& mobo = asImp_().mobility_[oilPhaseIdx];
+            //mobo = muOil / EOS::oleic_viscosity(T, p, Evaluation(0.));
+            //Evaluation& mobw = asImp_().mobility_[waterPhaseIdx];
+            //mobw = muWat / EOS::aqueous_viscosity(T, p, Evaluation(0.));
+
+            //fs.setViscosity(oilPhaseIdx, EOS::oleic_viscosity(T, p, Evaluation(0.)));
+            //fs.setViscosity(waterPhaseIdx, EOS::aqueous_viscosity(T, p, Evaluation(0.)));
+        }
+
+        effectiveProperties(elemCtx, scvIdx, timeIdx);
         solventMobility_ /= solventViscosity_;
+
+
 
 
     }

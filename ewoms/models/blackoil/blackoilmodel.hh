@@ -70,6 +70,7 @@ BEGIN_PROPERTIES
 NEW_TYPE_TAG(BlackOilModel, INHERITS_FROM(MultiPhaseBaseModel,
                                           VtkBlackOil,
                                           VtkBlackOilSolvent,
+                                          BlackOilSolvent,
                                           VtkBlackOilPolymer,
                                           VtkBlackOilEnergy,
                                           VtkComposition));
