@@ -111,6 +111,13 @@ struct EOS
     }
 
     template<typename LhsEval>
+    static LhsEval gas_density(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+        assert(x == 1);
+        return eval(co2_h2o_dens, T, p, x);
+    }
+
+    template<typename LhsEval>
     static LhsEval oleic_viscosity(LhsEval T, LhsEval p, LhsEval x) {
         //assert(T == (TEMPERATURE + 273.15));
         return eval(co2_c8_visc, T, p, x);
@@ -559,9 +566,9 @@ public:
      */
     static void registerParameters()
     {
-        if (!enableSolvent)
-            // solvents have disabled at compile time
-            return;
+        //if (!enableSolvent)
+        //    // solvents have disabled at compile time
+        //    return;
 
 
         EWOMS_REGISTER_PARAM(TypeTag, bool, EnablePaduaInterpolation,
@@ -968,8 +975,7 @@ class BlackOilSolventIntensiveQuantities
     typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
 
     typedef BlackOilSolventModule<TypeTag> SolventModule;
-
-    enum { enablePaduaInterpolation = GET_PROP_VALUE(TypeTag, EnablePaduaInterpolation) };
+    bool enablePaduaInterpolation = EWOMS_GET_PARAM(TypeTag, bool, EnablePaduaInterpolation);
     enum { numPhases = GET_PROP_VALUE(TypeTag, NumPhases) };
     static constexpr int solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr int oilPhaseIdx = FluidSystem::oilPhaseIdx;
@@ -1142,8 +1148,8 @@ public:
         solventDensity_ = solventInvFormationVolumeFactor_*solventRefDensity_;
         solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
 
-        if (enablePaduaInterpolation) {
-            solventViscosity_ = EOS::oleic_viscosity(T, p, Evaluation(1.));
+        if (false && enablePaduaInterpolation) {
+            //solventViscosity_ = EOS::oleic_viscosity(T, p, Evaluation(1.));
 
             Evaluation oilSolventSat = fs.saturation(oilPhaseIdx) + solventSaturation_;
             Evaluation FsolOil = 0.0;
@@ -1170,9 +1176,9 @@ public:
 
             //fs.setViscosity(oilPhaseIdx, EOS::oleic_viscosity(T, p, Evaluation(0.)));
             //fs.setViscosity(waterPhaseIdx, EOS::aqueous_viscosity(T, p, Evaluation(0.)));
+        } else {
+            effectiveProperties(elemCtx, scvIdx, timeIdx);
         }
-
-        effectiveProperties(elemCtx, scvIdx, timeIdx);
         solventMobility_ /= solventViscosity_;
 
 
@@ -1266,7 +1272,7 @@ private:
         Evaluation muGasEff = pow(muGas,1.0 - tlMixParamMu) * pow(muMixSolventGas, tlMixParamMu);
         Evaluation muSolventEff = pow(muSolvent,1.0 - tlMixParamMu) * pow(muMixSolventGasOil, tlMixParamMu);
 
-        // Compute effective densities
+        // Compute densities for mixture
         const Evaluation& rhoGas = fs.density(gasPhaseIdx);
         const Evaluation& rhoOil = fs.density(oilPhaseIdx);
         const Evaluation& rhoSolvent = solventDensity_;
@@ -1296,8 +1302,14 @@ private:
         if (oilGasSolventEffSat.value() > cutOff)
             rhoMixSolventGasOil = (rhoOil * oilEffSat / oilGasSolventEffSat) + (rhoGas * gasEffSat / oilGasSolventEffSat) + (rhoSolvent * solventEffSat / oilGasSolventEffSat);
 
+        const Evaluation& T = fs.temperature(gasPhaseIdx);
+        const Evaluation& p = fs.pressure(gasPhaseIdx);
+
         Evaluation rhoGasEff = 0.0;
-        if (std::abs(muSolventPow.value() - muGasPow.value()) < cutOff)
+        if (enablePaduaInterpolation) {
+            Evaluation FsolGas = solventEffSat / solventGasEffSat;
+            rhoGasEff = ((1.0 - tlMixParamRho) * rhoGas) + (tlMixParamRho * EOS::gas_density(T, p, FsolGas));
+        } else if (std::abs(muSolventPow.value() - muGasPow.value()) < cutOff)
             rhoGasEff = ((1.0 - tlMixParamRho) * rhoGas) + (tlMixParamRho * rhoMixSolventGasOil);
         else {
             const Evaluation solventGasEffFraction = (muGasPow * (muSolventPow - muGasEffPow)) / (muGasEffPow * (muSolventPow - muGasPow));
@@ -1305,7 +1317,10 @@ private:
         }
 
         Evaluation rhoOilEff = 0.0;
-        if (std::abs(muOilPow.value() - muSolventPow.value()) < cutOff) {
+        if (enablePaduaInterpolation) {
+            Evaluation FsolOil = solventEffSat / oilSolventEffSat;
+            rhoOilEff = ((1.0 - tlMixParamRho) * rhoOil) + (tlMixParamRho * EOS::oleic_density(T, p, FsolOil));
+        }else if (std::abs(muOilPow.value() - muSolventPow.value()) < cutOff) {
             rhoOilEff = ((1.0 - tlMixParamRho) * rhoOil) + (tlMixParamRho * rhoMixSolventGasOil);
         }
         else {
@@ -1314,7 +1329,10 @@ private:
         }
 
         Evaluation rhoSolventEff = 0.0;
-        if (std::abs((muSolventOilGasPow.value() - (muOilPow.value() * muGasPow.value()))) < cutOff)
+        if (enablePaduaInterpolation) {
+            Evaluation FsolOil = solventEffSat / oilSolventEffSat; // what about gas???
+            rhoSolventEff = ((1.0 - tlMixParamRho) * rhoSolvent) + (tlMixParamRho * EOS::oleic_density(T, p, FsolOil));
+        } else if (std::abs((muSolventOilGasPow.value() - (muOilPow.value() * muGasPow.value()))) < cutOff)
             rhoSolventEff = ((1.0 - tlMixParamRho) * rhoSolvent) + (tlMixParamRho * rhoMixSolventGasOil);
         else {
             const Evaluation sfraction_se = (muSolventOilGasPow - (muOilPow * muGasPow * muSolventPow / muSolventEffPow)) / (muSolventOilGasPow - (muOilPow * muGasPow));
