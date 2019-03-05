@@ -1248,16 +1248,33 @@ private:
         const Evaluation muGasPow = pow(muGas, 0.25);
         const Evaluation muSolventPow = pow(muSolvent, 0.25);
 
+
+        const Evaluation& T = fs.temperature(gasPhaseIdx);
+        const Evaluation& p = fs.pressure(gasPhaseIdx);
+
+
         Evaluation muMixOilSolvent = muOil;
-        if (oilSolventEffSat > cutOff)
+        if (enablePaduaInterpolation) {
+            Evaluation FsolOil = solventEffSat / oilSolventEffSat;
+            muMixOilSolvent = EOS::oleic_viscosity(T, p, FsolOil);
+        }
+        else if (oilSolventEffSat > cutOff)
             muMixOilSolvent *= muSolvent / pow(((oilEffSat / oilSolventEffSat) * muSolventPow) + ((solventEffSat / oilSolventEffSat) * muOilPow) , 4.0);
 
         Evaluation muMixSolventGas = muGas;
-        if (solventGasEffSat > cutOff)
+        if (enablePaduaInterpolation) {
+            Evaluation FsolGas = solventEffSat / solventGasEffSat;
+            muMixSolventGas = EOS::gas_viscosity(T, p, FsolGas);
+        }
+        else if (solventGasEffSat > cutOff)
             muMixSolventGas *= muSolvent / pow(((gasEffSat / solventGasEffSat) * muSolventPow) + ((solventEffSat / solventGasEffSat) * muGasPow) , 4.0);
 
         Evaluation muMixSolventGasOil = muOil;
-        if (oilGasSolventEffSat > cutOff)
+        if (enablePaduaInterpolation) {
+            Evaluation FsolOil = solventEffSat / oilSolventEffSat;
+            muMixSolventGasOil = EOS::oleic_viscosity(T, p, FsolOil);
+        }
+        else if (oilGasSolventEffSat > cutOff)
             muMixSolventGasOil *= muSolvent * muGas / pow(((oilEffSat / oilGasSolventEffSat) * muSolventPow *  muGasPow)
                   + ((solventEffSat / oilGasSolventEffSat) * muOilPow *  muGasPow) + ((gasEffSat / oilGasSolventEffSat) * muSolventPow * muOilPow), 4.0);
 
