@@ -113,8 +113,9 @@ struct EOS
     template<typename LhsEval>
     static LhsEval gas_density(LhsEval T, LhsEval p, LhsEval x) {
         //assert(T == (TEMPERATURE + 273.15));
+#warning add gas + co2 table
         assert(x == 1);
-        return eval(co2_h2o_dens, T, p, x);
+        return eval(co2_c8_dens, T, p, x);
     }
 
     template<typename LhsEval>
@@ -127,6 +128,14 @@ struct EOS
     static LhsEval aqueous_viscosity(LhsEval T, LhsEval p, LhsEval x) {
         //assert(T == (TEMPERATURE + 273.15));
         return eval(co2_h2o_visc, T, p, x);
+    }
+
+    template<typename LhsEval>
+    static LhsEval gas_viscosity(LhsEval T, LhsEval p, LhsEval x) {
+        //assert(T == (TEMPERATURE + 273.15));
+#warning add gas + co2 table
+        assert(x == 1);
+        return eval(co2_c8_visc, T, p, x);
     }
 
     template<typename LhsEval>
@@ -432,6 +441,9 @@ public:
                     setTlpmixpa(regionIdx, ones);
             }
         }
+
+
+
     }
 #endif
 
@@ -1148,37 +1160,43 @@ public:
         solventDensity_ = solventInvFormationVolumeFactor_*solventRefDensity_;
         solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
 
-        if (false && enablePaduaInterpolation) {
-            //solventViscosity_ = EOS::oleic_viscosity(T, p, Evaluation(1.));
+//        Evaluation x = 0.0;
+//        int n = 10;
+//        double delta = 1.0/n;
+//        for (int i = 0; i < n; ++i) {
+//            std::cout << x << " " << EOS::aqueous_density(T,p,x)<< std::endl;
+//            x += delta;
+//        }
 
-            Evaluation oilSolventSat = fs.saturation(oilPhaseIdx) + solventSaturation_;
-            Evaluation FsolOil = 0.0;
-            if (oilSolventSat > cutOff)
-                FsolOil = solventSaturation_/oilSolventSat;
+        // Water
+        if (enablePaduaInterpolation) {
+            Evaluation solventGasSat = fs.saturation(gasPhaseIdx) + solventSaturation_;
+            Evaluation FsolGas = 0.0;
+            if (solventGasSat > cutOff)
+                FsolGas = solventSaturation_/solventGasSat;
 
-            //assume fully miscible
-            solventDensity_ = EOS::oleic_density(T, p, FsolOil);
-
+            //henry's law, 80C, constant 400
+            // Carbon dioxide in water equilibrium
+            // John J. Carroll and Alan E. Mather, "The System Carbon Dioxide-Water and the
+            // Krichevsky-Kasarnovsky Equation," Journal of Solution Chemistry, vol. 21, pp. 607-
+            // 621, 1992.
+#warning TODO co2-water misc function
+            Evaluation FsolWater = solventSaturation_ * p * 1e-6 / 400;
+            //if (FsolGas > cutOff)
+                //std::cout << FsolGas << " " << FsolWater << std::endl;
 #warning assume mole fraction = volume fraction
-            //auto& fs2 = asImp_().fluidState_;
-            fs.setDensity(oilPhaseIdx, EOS::oleic_density(T, p, FsolOil));
-            fs.setInvB(oilPhaseIdx, FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx) / fs.density(oilPhaseIdx) );
-            fs.setDensity(waterPhaseIdx, EOS::aqueous_density(T, p, Evaluation(0.0)));
+            //std::cout << FsolWater << " " << fs.density(waterPhaseIdx) << " " << EOS::aqueous_density(T, p, FsolWater) << std::endl;
+            //std::cout << FsolWater << " " << fs.viscosity(waterPhaseIdx) << " " << EOS::aqueous_viscosity(T, p, FsolWater) << std::endl;
+
+            fs.setDensity(waterPhaseIdx, EOS::aqueous_density(T, p, FsolWater));
             fs.setInvB(waterPhaseIdx, FluidSystem::referenceDensity(waterPhaseIdx, pvtRegionIdx) / fs.density(waterPhaseIdx) );
-
-
-            //const Evaluation& muOil = fs.viscosity(oilPhaseIdx);
-            //const Evaluation& muWat = fs.viscosity(waterPhaseIdx);
-            //Evaluation& mobo = asImp_().mobility_[oilPhaseIdx];
-            //mobo = muOil / EOS::oleic_viscosity(T, p, Evaluation(0.));
-            //Evaluation& mobw = asImp_().mobility_[waterPhaseIdx];
-            //mobw = muWat / EOS::aqueous_viscosity(T, p, Evaluation(0.));
-
-            //fs.setViscosity(oilPhaseIdx, EOS::oleic_viscosity(T, p, Evaluation(0.)));
-            //fs.setViscosity(waterPhaseIdx, EOS::aqueous_viscosity(T, p, Evaluation(0.)));
-        } else {
-            effectiveProperties(elemCtx, scvIdx, timeIdx);
+            const Evaluation& muWat = fs.viscosity(waterPhaseIdx);
+            Evaluation& mobw = asImp_().mobility_[waterPhaseIdx];
+            mobw *= muWat / EOS::aqueous_viscosity(T, p, FsolWater);
         }
+
+        effectiveProperties(elemCtx, scvIdx, timeIdx);
+
         solventMobility_ /= solventViscosity_;
 
 
@@ -1318,9 +1336,6 @@ private:
         Evaluation rhoMixSolventGasOil = 0.0;
         if (oilGasSolventEffSat.value() > cutOff)
             rhoMixSolventGasOil = (rhoOil * oilEffSat / oilGasSolventEffSat) + (rhoGas * gasEffSat / oilGasSolventEffSat) + (rhoSolvent * solventEffSat / oilGasSolventEffSat);
-
-        const Evaluation& T = fs.temperature(gasPhaseIdx);
-        const Evaluation& p = fs.pressure(gasPhaseIdx);
 
         Evaluation rhoGasEff = 0.0;
         if (enablePaduaInterpolation) {
