@@ -1160,16 +1160,19 @@ public:
         solventDensity_ = solventInvFormationVolumeFactor_*solventRefDensity_;
         solventViscosity_ = solventPvt.viscosity(pvtRegionIdx, T, p);
 
-//        Evaluation x = 0.0;
-//        int n = 10;
-//        double delta = 1.0/n;
-//        for (int i = 0; i < n; ++i) {
-//            std::cout << x << " " << EOS::aqueous_density(T,p,x)<< std::endl;
-//            x += delta;
-//        }
+       // Water
+        bool enablePaduaInterpolationForWater = false;
+        if (enablePaduaInterpolationForWater) {
 
-        // Water
-        if (enablePaduaInterpolation) {
+            //        Evaluation x = 0.0;
+            //        int n = 10;
+            //        double delta = 1.0/n;
+            //        for (int i = 0; i < n; ++i) {
+            //            std::cout << x << " " << EOS::aqueous_density(T,p,x)<< std::endl;
+            //            x += delta;
+            //        }
+
+
             Evaluation solventGasSat = fs.saturation(gasPhaseIdx) + solventSaturation_;
             Evaluation FsolGas = 0.0;
             if (solventGasSat > cutOff)
@@ -1180,15 +1183,25 @@ public:
             // John J. Carroll and Alan E. Mather, "The System Carbon Dioxide-Water and the
             // Krichevsky-Kasarnovsky Equation," Journal of Solution Chemistry, vol. 21, pp. 607-
             // 621, 1992.
+
+            //
+            Scalar K = 400; // trial and error 870
 #warning TODO co2-water misc function
-            Evaluation FsolWater = solventSaturation_ * p * 1e-6 / 400;
+            Evaluation FsolWater = solventSaturation_ * p * 1e-6 / K;
             //if (FsolGas > cutOff)
                 //std::cout << FsolGas << " " << FsolWater << std::endl;
 #warning assume mole fraction = volume fraction
             //std::cout << FsolWater << " " << fs.density(waterPhaseIdx) << " " << EOS::aqueous_density(T, p, FsolWater) << std::endl;
             //std::cout << FsolWater << " " << fs.viscosity(waterPhaseIdx) << " " << EOS::aqueous_viscosity(T, p, FsolWater) << std::endl;
+            //Evaluation den = Opm::max(EOS::aqueous_density(T, p, FsolWater), fs.density(waterPhaseIdx));
 
-            fs.setDensity(waterPhaseIdx, EOS::aqueous_density(T, p, FsolWater));
+            //Evaluation den = fs.density(waterPhaseIdx);
+            //if (solventSaturation_> 0.03)
+            //    den*=1.05;
+
+            Evaluation den = EOS::aqueous_density(T, p, FsolWater);
+
+            fs.setDensity(waterPhaseIdx, den);
             fs.setInvB(waterPhaseIdx, FluidSystem::referenceDensity(waterPhaseIdx, pvtRegionIdx) / fs.density(waterPhaseIdx) );
             const Evaluation& muWat = fs.viscosity(waterPhaseIdx);
             Evaluation& mobw = asImp_().mobility_[waterPhaseIdx];
