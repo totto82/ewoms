@@ -35,7 +35,7 @@
 #include <ewoms/common/propertysystem.hh>
 #include <ewoms/common/parametersystem.hh>
 
-
+#include <opm/grid/verteq/topsurf.hpp>
 #include <type_traits>
 #include <string>
 
@@ -99,6 +99,12 @@ public:
             // store pointer to dune grid
             gridPtr_.reset( dgfPointer.release() );
         }
+
+// make Ve
+      Opm::TopSurf* ts;
+      ts = Opm::TopSurf::create (*gridPtr_);
+      typedef Dune::PolyhedralGrid< 2, 2 > Grid2D;
+      gridPtr_.reset(new Grid2D (*ts));
 
         if (numRefinments > 0)
             gridPtr_->globalRefine(static_cast<int>(numRefinments));

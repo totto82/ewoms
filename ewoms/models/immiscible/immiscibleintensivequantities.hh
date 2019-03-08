@@ -148,6 +148,7 @@ public:
 
         // update the quantities specific for the velocity model
         FluxIntensiveQuantities::update_(elemCtx, dofIdx, timeIdx);
+
     }
 
     /*!
