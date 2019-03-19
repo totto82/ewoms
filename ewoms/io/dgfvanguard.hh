@@ -89,20 +89,25 @@ public:
         const std::string dgfFileName = EWOMS_GET_PARAM(TypeTag, std::string, GridFile);
         unsigned numRefinments = EWOMS_GET_PARAM(TypeTag, unsigned, GridGlobalRefinements);
 
-        {
-            // create DGF GridPtr from a dgf file
-            Dune::GridPtr< Grid > dgfPointer( dgfFileName );
+#warning hard-code 3D grid before reducing it to 2d
+        typedef Dune::PolyhedralGrid< 3, 3 > Grid3D;
+        //std::unique_ptr< Grid3D >  grid3d;
 
-            // this is only implemented for 2d currently
-            addFractures_( dgfPointer );
+        // create DGF GridPtr from a dgf file
+        Dune::GridPtr< Grid3D > dgfPointer( dgfFileName );
 
-            // store pointer to dune grid
-            gridPtr_.reset( dgfPointer.release() );
-        }
+        // this is only implemented for 2d currently
+        //addFractures_( dgfPointer );
 
-// make Ve
+        // store pointer to dune grid
+        //grid3d.reset( dgfPointer.release() );
+
+
+        // make Ve
+        //typedef Dune::PolyhedralGrid< 3, 3 > Grid3D;
+        //Grid3D grid3d(*gridPtr_);
       Opm::TopSurf* ts;
-      ts = Opm::TopSurf::create (*gridPtr_);
+      ts = Opm::TopSurf::create (*dgfPointer);
       typedef Dune::PolyhedralGrid< 2, 2 > Grid2D;
       gridPtr_.reset(new Grid2D (*ts));
 
