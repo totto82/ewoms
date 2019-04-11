@@ -209,8 +209,8 @@ protected:
         }
 
         if (enableSolvent) {
-            deltaSs = update[Indices::solventSaturationIdx];
-            deltaSo -= deltaSs;
+            //deltaSs = update[Indices::solventSaturationIdx];
+            //deltaSo -= deltaSs;
         }
 
         // maximum saturation delta
@@ -254,9 +254,11 @@ protected:
                         delta = currentValue[Indices::compositionSwitchIdx];
                 }
             }
-            else if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
+            else if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
                 // solvent saturation updates are also subject to the Appleyard chop
-                delta *= satAlpha;
+                //delta *= satAlpha;
+                delta = Opm::min(delta, 1);
+            }
             else if (enablePolymerWeight && pvIdx == Indices::polymerMoleWeightIdx) {
                 const double sign = delta >= 0. ? 1. : -1.;
                 // maximum change of polymer molecular weight, the unit is MDa.
@@ -266,12 +268,16 @@ protected:
                 delta *= satAlpha;
             }
 
+            //if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
+            //    if (delta > 0 )
+            //        std::cout << "delta " << delta << std::endl;
+
             // do the actual update
             nextValue[pvIdx] = currentValue[pvIdx] - delta;
 
             // keep the solvent saturation between 0 and 1
             if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
-                nextValue[pvIdx] = std::min(std::max(nextValue[pvIdx], 0.0), 1.0);
+                nextValue[pvIdx] = std::min(std::max(nextValue[pvIdx], 0.0), 1000.0);
 
             // keep the polymer concentration above 0
             if (enablePolymer && pvIdx == Indices::polymerConcentrationIdx)

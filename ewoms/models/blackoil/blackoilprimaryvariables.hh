@@ -577,10 +577,10 @@ private:
 
     Scalar solventSaturation_() const
     {
-        if (!enableSolvent)
-            return 0.0;
+        //if (!enableSolvent)
+        return 0.0;
 
-        return (*this)[Indices::solventSaturationIdx];
+        //return (*this)[Indices::solventSaturationIdx];
     }
 
     Scalar polymerConcentration_() const
