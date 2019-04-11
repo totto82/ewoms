@@ -1121,8 +1121,13 @@ public:
             //std::cout << "rv " << rv << " " << fs.Rv() << std::endl;
         }
 
-        //std::cout << "solventXo() "<< solventXo() << std::endl;
-        fs.setRs( Opm::max( rs - solventRs()*5, 0.0) );
+        if (solventXo() > 0)
+            std::cout << "solventXo() "<< solventXo() << std::endl;
+
+        if (solventXg() > 0)
+            std::cout << "solventXg() "<< solventXg() << std::endl;
+
+        fs.setRs( Opm::max( rs - solventRs(), 0.0) );
         fs.setRv( Opm::max( rv, 0.0) );
 
         const auto& boOrig = FluidSystem::inverseFormationVolumeFactor(fs, oilPhaseIdx, 0);
@@ -1132,11 +1137,11 @@ public:
         Evaluation bg = fs.invB(gasPhaseIdx);
         const Evaluation& bs = solventInverseFormationVolumeFactor();
 
-        bo = boOrig*(1.0 - solventXo());
-        if (solventXo() > 1.0)
-            std::cout << solventXo() << std::endl;
+        //bo = boOrig*(1.0 - solventXo());
         //std::cout << "bo " << bo << " "
-        bo += solventXo()*bs;
+        //bo += solventXo()*bs;
+
+        bo = boOrig*(1.0 + solventXo());
         fs.setInvB(oilPhaseIdx, bo);
 
         bg = bgOrig*(1.0 - solventXg());
@@ -1261,7 +1266,7 @@ public:
 
     const Evaluation solventRs() const
     {
-        return solventSaturation();
+        return solventSaturation(); //scale by ref density???
         //return 0.0;
     }
 
@@ -1285,7 +1290,7 @@ public:
         //const auto& fs = iq.fluidState();
         //hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
        // Evaluation xco2 = zco2oil*fs.saturation(oilPhaseIdx);
-        return  convertRsToXoG(solventRs(),0, true);
+        return  convertRsToXoG(solventRs()*100,0, true);
     }
 
     const Evaluation solventXg() const
