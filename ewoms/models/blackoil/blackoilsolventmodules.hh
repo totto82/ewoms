@@ -564,23 +564,29 @@ public:
                     * Toolbox::template decay<LhsEval>(fs.invB(oilPhaseIdx))
                     * Toolbox::template decay<LhsEval>(intQuants.porosity());
 
-            LhsEval surfaceVolumeGas =
-                    Toolbox::template decay<LhsEval>(fs.saturation(gasPhaseIdx))
-                    * Toolbox::template decay<LhsEval>(fs.invB(gasPhaseIdx))
+            //LhsEval surfaceVolumeGas =
+            //        Toolbox::template decay<LhsEval>(fs.saturation(gasPhaseIdx))
+            //        * Toolbox::template decay<LhsEval>(fs.invB(gasPhaseIdx))
+            //        * Toolbox::template decay<LhsEval>(intQuants.porosity());
+
+            LhsEval surfaceVolumeSolvent =
+                    Toolbox::template decay<LhsEval>(intQuants.solventSaturation())
+                    * Toolbox::template decay<LhsEval>(intQuants.solventInverseFormationVolumeFactor())
                     * Toolbox::template decay<LhsEval>(intQuants.porosity());
 
             // avoid singular matrix if no water is present.
             surfaceVolumeOil = Opm::max(surfaceVolumeOil, 1e-10);
 
             // avoid singular matrix if no water is present.
-            surfaceVolumeGas = Opm::max(surfaceVolumeGas, 1e-10);
+            //surfaceVolumeGas = Opm::max(surfaceVolumeGas, 1e-10);
 
             storage[contiSolventEqIdx] +=
                     surfaceVolumeOil * Toolbox::template decay<LhsEval> (intQuants.solventRs());
-            storage[contiSolventEqIdx] +=
-                    surfaceVolumeGas * Toolbox::template decay<LhsEval> (intQuants.solventRv());
+            storage[contiSolventEqIdx] += surfaceVolumeSolvent;
+                    //surfaceVolumeGas * Toolbox::template decay<LhsEval> (intQuants.solventRv());
         }
         else {
+            std::abort();
             storage[contiSolventEqIdx] +=
                     Toolbox::template decay<LhsEval>(intQuants.porosity())
                     * Toolbox::template decay<LhsEval>(fs.saturation(oilPhaseIdx))
@@ -619,19 +625,18 @@ public:
                         extQuants.volumeFlux(oilPhaseIdx)
                         *fs.invB(oilPhaseIdx)
                         *up.solventRs()
-                        +extQuants.volumeFlux(gasPhaseIdx)
-                        *fs.invB(gasPhaseIdx)
-                        *up.solventRv();
+                        +extQuants.solventVolumeFlux()
+                        *up.solventInverseFormationVolumeFactor();
             else
                 flux[contiSolventEqIdx] =
                         extQuants.volumeFlux(oilPhaseIdx)
                         *Opm::decay<Scalar>(fs.invB(oilPhaseIdx))
                         *Opm::decay<Scalar>(up.solventRs())
-                        +extQuants.volumeFlux(gasPhaseIdx)
-                        *Opm::decay<Scalar>(fs.invB(gasPhaseIdx))
-                        *Opm::decay<Scalar>(up.solventRv());
+                        +extQuants.solventVolumeFlux()
+                        *Opm::decay<Scalar>(up.solventInverseFormationVolumeFactor());
         }
         else {
+            std:abort();
             if (upIdx == inIdx)
                 flux[contiSolventEqIdx] =
                         extQuants.volumeFlux(oilPhaseIdx)
@@ -674,8 +679,8 @@ public:
             return;
 
         // do a plain unchopped Newton update
-        //if (delta[solventSaturationIdx] > 0.0)
-        //std::cout << delta[solventSaturationIdx] << std::endl;
+        if (delta[solventSaturationIdx] > 0.0)
+            std::cout << delta[solventSaturationIdx] << std::endl;
 
         newPv[solventSaturationIdx] = oldPv[solventSaturationIdx] - delta[solventSaturationIdx];
     }
@@ -943,10 +948,7 @@ class BlackOilSolventIntensiveQuantities
     static constexpr int waterPhaseIdx = FluidSystem::waterPhaseIdx;
     static constexpr double cutOff = 1e-12;
 
-    enum PrimaryVarsMeaningSolvent {
-        Ss, // gas
-        Rs, // dissolved co2
-    };
+
 
 
 public:
@@ -965,15 +967,16 @@ public:
         solventSaturation_ = 0.0;
 
         Evaluation solventX = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
-        if (primaryVarsMeaningSolvent_ == PrimaryVarsMeaningSolvent::Ss)
+        if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss)
             solventSaturation_ = solventX;
 
         solventRs_ = 200; // rsSat;
-        if (primaryVarsMeaningSolvent_ == PrimaryVarsMeaningSolvent::Rs)
+        if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Rs)
             solventRs_ = solventX;
 
         hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
 
+        //std::cout << solventSaturation_ << " " << solventRs_ << " " << priVars.primaryVarsMeaningSolvent() << std::endl;
         // apply a cut-off. Don't waste calculations if no solvent
         //if (solventSaturation().value() < cutOff)
         //    return;
@@ -1032,9 +1035,13 @@ public:
 
 
 
+        Evaluation gasSolventSat = hydrocarbonSaturation_ + solventSaturation_;
 
-        //Evaluation Fhydgas = hydrocarbonSaturation_/gasSolventSat;
+        if (gasSolventSat.value() < cutOff) // avoid division by zero
+            return;
 
+        Evaluation Fhydgas = hydrocarbonSaturation_/gasSolventSat;
+        Evaluation Fsolgas = solventSaturation_/gasSolventSat;
 
         // account for miscibility of oil and solvent
         if (SolventModule::isMiscible()) {
@@ -1092,12 +1099,12 @@ public:
 
 
         // compute the mobility of the solvent "phase" and modify the gas phase
-        //const auto& ssfnKrg = SolventModule::ssfnKrg(elemCtx, dofIdx, timeIdx);
-        //const auto& ssfnKrs = SolventModule::ssfnKrs(elemCtx, dofIdx, timeIdx);
+        const auto& ssfnKrg = SolventModule::ssfnKrg(elemCtx, dofIdx, timeIdx);
+        const auto& ssfnKrs = SolventModule::ssfnKrs(elemCtx, dofIdx, timeIdx);
 
-        //Evaluation& krg = asImp_().mobility_[gasPhaseIdx];
-        //solventMobility_ = krg * ssfnKrs.eval(Fsolgas, /*extrapolate=*/true);
-        //krg *= ssfnKrg.eval(Fhydgas, /*extrapolate=*/true);
+        Evaluation& krg = asImp_().mobility_[gasPhaseIdx];
+        solventMobility_ = krg * ssfnKrs.eval(Fsolgas, /*extrapolate=*/true);
+        krg *= ssfnKrg.eval(Fhydgas, /*extrapolate=*/true);
 
     }
 
@@ -1135,14 +1142,14 @@ public:
             //std::cout << "rv " << rv << " " << fs.Rv() << std::endl;
         }
 
-        if (solventXo() > 0)
-            std::cout << "solventXo() "<< solventXo() << std::endl;
+        //if (solventXo() > 0)
+        //    std::cout << "solventXo() "<< solventXo() << std::endl;
 
-        if (solventXg() > 0)
-            std::cout << "solventXg() "<< solventXg() << std::endl;
+        //if (solventXg() > 0)
+        //    std::cout << "solventXg() "<< solventXg() << std::endl;
 
-        fs.setRs( Opm::max( rs - solventRs(), 0.0) );
-        fs.setRv( Opm::max( rv, 0.0) );
+        //fs.setRs( Opm::max( rs - solventRs(), 0.0) );
+        //fs.setRv( Opm::max( rv, 0.0) );
 
         const auto& boOrig = FluidSystem::inverseFormationVolumeFactor(fs, oilPhaseIdx, 0);
         const auto& bgOrig = FluidSystem::inverseFormationVolumeFactor(fs, gasPhaseIdx, 0);
@@ -1155,12 +1162,12 @@ public:
         //std::cout << "bo " << bo << " "
         //bo += solventXo()*bs;
 
-        bo = boOrig*(1.0 - solventXo());
-        fs.setInvB(oilPhaseIdx, bo);
+        //bo = boOrig*(1.0 - solventXo());
+        //fs.setInvB(oilPhaseIdx, bo);
 
-        bg = bgOrig*(1.0 - solventXg());
+        //bg = bgOrig*(1.0 - solventXg());
         //bg += solventXg()*bs;
-        fs.setInvB(gasPhaseIdx, bg);
+        //fs.setInvB(gasPhaseIdx, bg);
 
         //Evaluation rs = fs.Rs();
         //std::cout << "solventXo() "<< solventXo() << std::endl;
@@ -1172,11 +1179,11 @@ public:
                       *(FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)
                         + FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)*fs.Rs()
                         + solventRefDensity()*solventRs()));
-        fs.setDensity(gasPhaseIdx,
-                      fs.invB(gasPhaseIdx)
-                      *(FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)
-                        + FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)*fs.Rv()
-                        + solventRefDensity()*solventRv()));
+//        fs.setDensity(gasPhaseIdx,
+//                      fs.invB(gasPhaseIdx)
+//                      *(FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)
+//                        + FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)*fs.Rv()
+//                        + solventRefDensity()*solventRv()));
 
         const Evaluation& muGas = fs.viscosity(gasPhaseIdx);
         const Evaluation& muOil = fs.viscosity(oilPhaseIdx);
@@ -1184,11 +1191,11 @@ public:
 
         Evaluation& mobo = asImp_().mobility_[oilPhaseIdx];
         Evaluation muOilEff = (1.0 - solventXo())*muOil + solventXo()*muSolvent;
-        mobo *= muOil / muOilEff;
+        //mobo *= muOil / muOilEff;
 
         Evaluation& mobg = asImp_().mobility_[gasPhaseIdx];
         Evaluation muGasEff = (1.0 - solventXg())*muGas + solventXg()*muSolvent;
-        mobg *= muGas / muGasEff;
+        //mobg *= muGas / muGasEff;
 
         //solventMobility_ /= solventViscosity_;
 
@@ -1281,15 +1288,14 @@ public:
 //    }
 
     const Evaluation solventRs() const
-    {
-        return Opm::min(1.0, solventSaturation()); //scale by ref density???
-        //return 0.0;
+    {             
+        return solventRs_;
     }
 
     const Evaluation solventRv() const
     {
         //return solventSaturation();
-        return solventSaturation();
+        return 0.0; //solventSaturation();
     }
 
     const Evaluation solventXo() const
@@ -1520,6 +1526,7 @@ protected:
 
     Evaluation hydrocarbonSaturation_;
     Evaluation solventSaturation_;
+    Evaluation solventRs_;
     Evaluation solventDensity_;
     Evaluation solventViscosity_;
     Evaluation solventMobility_;
@@ -1527,7 +1534,7 @@ protected:
 
     Scalar solventRefDensity_;
 
-    PrimaryVarsMeaningSolvent primaryVarsMeaningSolvent_;
+    //PrimaryVarsMeaningSolvent primaryVarsMeaningSolvent_;
 };
 
 template <class TypeTag>

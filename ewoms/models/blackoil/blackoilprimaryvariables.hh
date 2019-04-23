@@ -111,6 +111,11 @@ public:
         Sw_pg_Rv, // water + gas case
     };
 
+    enum PrimaryVarsMeaningSolvent {
+        Ss, // gas
+        Rs, // dissolved co2
+    };
+
     BlackOilPrimaryVariables()
         : ParentType()
     {
@@ -125,6 +130,7 @@ public:
         : ParentType(value)
     {
         Opm::Valgrind::SetUndefined(primaryVarsMeaning_);
+        Opm::Valgrind::SetUndefined(primaryVarsMeaningSolvent_);
         pvtRegionIdx_ = 0;
     }
 
@@ -163,6 +169,21 @@ public:
      */
     void setPrimaryVarsMeaning(PrimaryVarsMeaning newMeaning)
     { primaryVarsMeaning_ = newMeaning; }
+
+
+    /*!
+     * \brief Return the interpretation which should be applied to the switching primary
+     *        variables.
+     */
+    PrimaryVarsMeaningSolvent primaryVarsMeaningSolvent() const
+    { return primaryVarsMeaningSolvent_; }
+
+    /*!
+     * \brief Set the interpretation which should be applied to the switching primary
+     *        variables.
+     */
+    void setPrimaryVarsMeaningSolvent(PrimaryVarsMeaningSolvent newMeaning)
+    { primaryVarsMeaningSolvent_ = newMeaning; }
 
     /*!
      * \copydoc ImmisciblePrimaryVariables::assignMassConservative
@@ -312,7 +333,40 @@ public:
                 (*this)[compositionSwitchIdx] = Rv;
         }
 
+        primaryVarsMeaningSolvent_ = Rs;
+
         checkDefined();
+
+
+    }
+
+    bool adaptPrimaryVariablesSolvent(const Problem& problem, unsigned globalDofIdx, Scalar eps = 0.0)
+    {
+        if (!enableSolvent)
+            return false;
+
+        if (primaryVarsMeaningSolvent_ == Rs) {
+            Scalar RsX = (*this)[Indices::solventSaturationIdx];
+            if (RsX > 200) {
+                (*this)[Indices::solventSaturationIdx] = 0.0;
+                setPrimaryVarsMeaningSolvent(Ss);
+                return true;
+            }
+            return false;
+        }
+
+        if (primaryVarsMeaningSolvent_ == Ss) {
+            Scalar Ss = (*this)[Indices::solventSaturationIdx];
+            if (Ss < 0.0) {
+                (*this)[Indices::solventSaturationIdx] = 200;
+                setPrimaryVarsMeaningSolvent(Rs);
+                return true;
+            }
+            return false;
+        }
+
+
+
     }
 
     /*!
@@ -577,10 +631,13 @@ private:
 
     Scalar solventSaturation_() const
     {
-        //if (!enableSolvent)
-        return 0.0;
+        if (!enableSolvent)
+            return 0.0;
 
-        //return (*this)[Indices::solventSaturationIdx];
+        if (primaryVarsMeaningSolvent_ == Rs)
+            return 0.0;
+
+        return (*this)[Indices::solventSaturationIdx];
     }
 
     Scalar polymerConcentration_() const
@@ -627,6 +684,8 @@ private:
     }
 
     PrimaryVarsMeaning primaryVarsMeaning_;
+    PrimaryVarsMeaningSolvent primaryVarsMeaningSolvent_;
+
     unsigned short pvtRegionIdx_;
 };
 

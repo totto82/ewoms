@@ -208,9 +208,9 @@ protected:
             deltaSo -= deltaSg;
         }
 
-        if (enableSolvent) {
-            //deltaSs = update[Indices::solventSaturationIdx];
-            //deltaSo -= deltaSs;
+        if (enableSolvent && currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
+            deltaSs = update[Indices::solventSaturationIdx];
+            deltaSo -= deltaSs;
         }
 
         // maximum saturation delta
@@ -256,8 +256,10 @@ protected:
             }
             else if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
                 // solvent saturation updates are also subject to the Appleyard chop
-                //delta *= satAlpha;
-                //delta = Opm::min(delta, 1);
+                if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
+                    delta *= satAlpha;
+                    delta = Opm::min(delta, 1);
+                }
             }
             else if (enablePolymerWeight && pvIdx == Indices::polymerMoleWeightIdx) {
                 const double sign = delta >= 0. ? 1. : -1.;
@@ -275,9 +277,14 @@ protected:
             // do the actual update
             nextValue[pvIdx] = currentValue[pvIdx] - delta;
 
-            // keep the solvent saturation between 0 and 1
-            if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
-                nextValue[pvIdx] = std::min(std::max(nextValue[pvIdx], 0.0), 1e99);
+            // keep the solvent saturation below 1 and rs above 0.0;
+            if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
+                if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
+                    nextValue[pvIdx] = std::min(nextValue[pvIdx], 1.0);
+                else
+                    nextValue[pvIdx] = std::max(nextValue[pvIdx], 0.0);
+            }
+
 
             // keep the polymer concentration above 0
             if (enablePolymer && pvIdx == Indices::polymerConcentrationIdx)
@@ -305,6 +312,8 @@ protected:
 
         if (wasSwitched_[globalDofIdx])
             ++ numPriVarsSwitched_;
+
+        nextValue.adaptPrimaryVariablesSolvent(this->problem(), globalDofIdx);
 
         nextValue.checkDefined();
     }
