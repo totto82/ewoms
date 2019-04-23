@@ -257,7 +257,7 @@ protected:
             else if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
                 // solvent saturation updates are also subject to the Appleyard chop
                 //delta *= satAlpha;
-                delta = Opm::min(delta, 1);
+                //delta = Opm::min(delta, 1);
             }
             else if (enablePolymerWeight && pvIdx == Indices::polymerMoleWeightIdx) {
                 const double sign = delta >= 0. ? 1. : -1.;
@@ -277,7 +277,7 @@ protected:
 
             // keep the solvent saturation between 0 and 1
             if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
-                nextValue[pvIdx] = std::min(std::max(nextValue[pvIdx], 0.0), 1000.0);
+                nextValue[pvIdx] = std::min(std::max(nextValue[pvIdx], 0.0), 1e99);
 
             // keep the polymer concentration above 0
             if (enablePolymer && pvIdx == Indices::polymerConcentrationIdx)

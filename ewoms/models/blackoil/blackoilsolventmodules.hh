@@ -943,6 +943,11 @@ class BlackOilSolventIntensiveQuantities
     static constexpr int waterPhaseIdx = FluidSystem::waterPhaseIdx;
     static constexpr double cutOff = 1e-12;
 
+    enum PrimaryVarsMeaningSolvent {
+        Ss, // gas
+        Rs, // dissolved co2
+    };
+
 
 public:
     /*!
@@ -957,16 +962,25 @@ public:
     {
         const PrimaryVariables& priVars = elemCtx.primaryVars(dofIdx, timeIdx);
         auto& fs = asImp_().fluidState_;
-        solventSaturation_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+        solventSaturation_ = 0.0;
+
+        Evaluation solventX = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+        if (primaryVarsMeaningSolvent_ == PrimaryVarsMeaningSolvent::Ss)
+            solventSaturation_ = solventX;
+
+        solventRs_ = 200; // rsSat;
+        if (primaryVarsMeaningSolvent_ == PrimaryVarsMeaningSolvent::Rs)
+            solventRs_ = solventX;
+
         hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
 
         // apply a cut-off. Don't waste calculations if no solvent
-        if (solventSaturation().value() < cutOff)
-            return;
+        //if (solventSaturation().value() < cutOff)
+        //    return;
 
         // make the saturation of the gas phase which is used by the saturation functions
         // the sum of the solvent "saturation" and the saturation the hydrocarbon gas.
-        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_ + solventSaturation_);
     }
 
     /*!
@@ -1141,11 +1155,11 @@ public:
         //std::cout << "bo " << bo << " "
         //bo += solventXo()*bs;
 
-        bo = boOrig*(1.0 + solventXo());
+        bo = boOrig*(1.0 - solventXo());
         fs.setInvB(oilPhaseIdx, bo);
 
         bg = bgOrig*(1.0 - solventXg());
-        bg += solventXg()*bs;
+        //bg += solventXg()*bs;
         fs.setInvB(gasPhaseIdx, bg);
 
         //Evaluation rs = fs.Rs();
@@ -1156,11 +1170,13 @@ public:
         fs.setDensity(oilPhaseIdx,
                       fs.invB(oilPhaseIdx)
                       *(FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)
-                        + FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)*fs.Rs()));
+                        + FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)*fs.Rs()
+                        + solventRefDensity()*solventRs()));
         fs.setDensity(gasPhaseIdx,
                       fs.invB(gasPhaseIdx)
                       *(FluidSystem::referenceDensity(gasPhaseIdx, pvtRegionIdx)
-                        + FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)*fs.Rv()));
+                        + FluidSystem::referenceDensity(oilPhaseIdx, pvtRegionIdx)*fs.Rv()
+                        + solventRefDensity()*solventRv()));
 
         const Evaluation& muGas = fs.viscosity(gasPhaseIdx);
         const Evaluation& muOil = fs.viscosity(oilPhaseIdx);
@@ -1266,7 +1282,7 @@ public:
 
     const Evaluation solventRs() const
     {
-        return solventSaturation(); //scale by ref density???
+        return Opm::min(1.0, solventSaturation()); //scale by ref density???
         //return 0.0;
     }
 
@@ -1290,7 +1306,7 @@ public:
         //const auto& fs = iq.fluidState();
         //hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
        // Evaluation xco2 = zco2oil*fs.saturation(oilPhaseIdx);
-        return  convertRsToXoG(solventRs()*100,0, true);
+        return  convertRsToXoG(solventRs(),0, true);
     }
 
     const Evaluation solventXg() const
@@ -1510,6 +1526,8 @@ protected:
     Evaluation solventInvFormationVolumeFactor_;
 
     Scalar solventRefDensity_;
+
+    PrimaryVarsMeaningSolvent primaryVarsMeaningSolvent_;
 };
 
 template <class TypeTag>
