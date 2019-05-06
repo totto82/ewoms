@@ -209,14 +209,14 @@ protected:
         }
 
         if (enableSolvent && currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
-            deltaSs = update[Indices::solventSaturationIdx];
-            deltaSo -= deltaSs;
+            //deltaSs = update[Indices::solventSaturationIdx];
+            //deltaSo -= deltaSs;
         }
 
         // maximum saturation delta
         Scalar maxSatDelta = std::max(std::abs(deltaSg), std::abs(deltaSo));
         maxSatDelta = std::max(maxSatDelta, std::abs(deltaSw));
-        maxSatDelta = std::max(maxSatDelta, std::abs(deltaSs));
+        //maxSatDelta = std::max(maxSatDelta, std::abs(deltaSs));
 
         // scaling factor for saturation deltas to make sure that none of them exceeds
         // the specified threshold value.
@@ -256,10 +256,10 @@ protected:
             }
             else if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
                 // solvent saturation updates are also subject to the Appleyard chop
-                if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
-                    delta *= satAlpha;
-                    delta = Opm::min(delta, 1);
-                }
+                //if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
+                //    delta *= satAlpha;
+                //    delta = Opm::min(delta, 1);
+                //}
             }
             else if (enablePolymerWeight && pvIdx == Indices::polymerMoleWeightIdx) {
                 const double sign = delta >= 0. ? 1. : -1.;
@@ -271,18 +271,18 @@ protected:
             }
 
             //if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
-            //    if (delta > 0 )
-            //        std::cout << "delta " << delta << std::endl;
+            if (delta > 0 )
+                std::cout << "delta " << delta << std::endl;
 
             // do the actual update
             nextValue[pvIdx] = currentValue[pvIdx] - delta;
 
             // keep the solvent saturation below 1 and rs above 0.0;
             if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
-                if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
-                    nextValue[pvIdx] = std::min(nextValue[pvIdx], 1.0);
-                else
-                    nextValue[pvIdx] = std::max(nextValue[pvIdx], 0.0);
+                //if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
+                nextValue[pvIdx] = std::max( std::min(nextValue[pvIdx], 1.0), 0.0);
+                //else
+                //nextValue[pvIdx] = std::max(nextValue[pvIdx], 0.0);
             }
 
 
@@ -313,7 +313,7 @@ protected:
         if (wasSwitched_[globalDofIdx])
             ++ numPriVarsSwitched_;
 
-        nextValue.adaptPrimaryVariablesSolvent(this->problem(), globalDofIdx);
+        //nextValue.adaptPrimaryVariablesSolvent(this->problem(), globalDofIdx);
 
         nextValue.checkDefined();
     }

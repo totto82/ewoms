@@ -139,8 +139,8 @@ public:
 
                 // deal with solvent
 #warning only when variable is ss
-                if (enableSolvent && priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
-                     Sg -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
+                //if (enableSolvent && priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
+                //Sg -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
             }
             else
             {
@@ -156,8 +156,8 @@ public:
         Evaluation So = 1.0 - Sw - Sg;
 
         // deal with solvent
-        if (enableSolvent && priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
-            So -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
+        //if (enableSolvent && priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss )
+        //    So -= priVars.makeEvaluation(Indices::solventSaturationIdx, timeIdx);
 
         if (FluidSystem::phaseIsActive(waterPhaseIdx))
             fluidState_.setSaturation(waterPhaseIdx, Sw);

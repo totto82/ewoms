@@ -634,6 +634,9 @@ private:
         if (!enableSolvent)
             return 0.0;
 
+        // sg is now total saturation
+        return 0.0;
+
         if (primaryVarsMeaningSolvent_ == Rs)
             return 0.0;
 

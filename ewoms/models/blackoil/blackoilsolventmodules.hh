@@ -967,15 +967,16 @@ public:
         solventSaturation_ = 0.0;
 
         Evaluation solventX = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
-        if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss)
-            solventSaturation_ = solventX;
+        //if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss)
+        //    solventSaturation_ = solventX;
 
-        solventRs_ = 200; // rsSat;
-        if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Rs)
-            solventRs_ = solventX;
+        solventRs_ = fs.Rs() * solventX ; // rsSat;
+        solventSaturation_ = fs.saturation(gasPhaseIdx) * solventX;
+        //if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Rs)
+        //    solventRs_ = solventX;
 
-        hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx);
-
+        hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx) * (1.0 - solventX);
+        //fs.setRs(fs.Rs() * (1.0 - solventX) );
         //std::cout << solventSaturation_ << " " << solventRs_ << " " << priVars.primaryVarsMeaningSolvent() << std::endl;
         // apply a cut-off. Don't waste calculations if no solvent
         //if (solventSaturation().value() < cutOff)
@@ -983,7 +984,7 @@ public:
 
         // make the saturation of the gas phase which is used by the saturation functions
         // the sum of the solvent "saturation" and the saturation the hydrocarbon gas.
-        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_ + solventSaturation_);
+        //fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_ + solventSaturation_);
     }
 
     /*!
@@ -1000,13 +1001,14 @@ public:
         // revert the gas "saturation" of the fluid state back to the saturation of the
         // hydrocarbon gas.
         auto& fs = asImp_().fluidState_;
-        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+        //fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+        //fs.setRs(fs.Rs() * (1.0 - solventX) );
 
         solventMobility_ = 0.0;
 
         // apply a cut-off. Don't waste calculations if no solvent
-        if (solventSaturation().value() < cutOff)
-            return;
+        //if (solventSaturation().value() < cutOff)
+        //    return;
 
         // Pressure effects on capillary pressure miscibility
         if (SolventModule::isMiscible()) {
@@ -1121,6 +1123,10 @@ public:
         const auto& iq = asImp_();
         auto& fs = asImp_().fluidState_;
         const auto& solventPvt = SolventModule::solventPvt();
+
+        //auto& fs = asImp_().fluidState_;
+        fs.setSaturation(gasPhaseIdx, hydrocarbonSaturation_);
+        fs.setRs(fs.Rs() - solventRs() );
 
         unsigned pvtRegionIdx = iq.pvtRegionIndex();
         solventRefDensity_ = solventPvt.referenceDensity(pvtRegionIdx);
