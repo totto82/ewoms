@@ -209,7 +209,7 @@ protected:
         }
 
         if (enableSolvent && currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
-            //deltaSs = update[Indices::solventSaturationIdx];
+            deltaSs = update[Indices::solventSaturationIdx];
             //deltaSo -= deltaSs;
         }
 
@@ -257,8 +257,8 @@ protected:
             else if (enableSolvent && pvIdx == Indices::solventSaturationIdx) {
                 // solvent saturation updates are also subject to the Appleyard chop
                 //if (currentValue.primaryVarsMeaningSolvent() == PrimaryVariables::Ss ) {
-                //    delta *= satAlpha;
-                //    delta = Opm::min(delta, 1);
+                    //delta *= satAlpha;
+                    //delta = Opm::min(delta, 1);
                 //}
             }
             else if (enablePolymerWeight && pvIdx == Indices::polymerMoleWeightIdx) {
@@ -270,9 +270,9 @@ protected:
                 delta *= satAlpha;
             }
 
-            //if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
-            if (delta > 0 )
-                std::cout << "delta " << delta << std::endl;
+            if (enableSolvent && pvIdx == Indices::solventSaturationIdx)
+                if (delta > 0 )
+                    std::cout << "delta " << delta << std::endl;
 
             // do the actual update
             nextValue[pvIdx] = currentValue[pvIdx] - delta;

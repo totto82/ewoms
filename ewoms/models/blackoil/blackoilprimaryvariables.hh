@@ -436,6 +436,8 @@ public:
                                                                                    So2,
                                                                                    SoMax);
 
+                RsSat *= SolventModule::RsMult(pvtRegionIndex(), po, solventZ_());
+                //SolventModule::TableRs([pvtRegionIndex()].eval(po, 0.0);
                 setPrimaryVarsMeaning(Sw_po_Rs);
                 if (compositionSwitchEnabled)
                     (*this)[Indices::compositionSwitchIdx] =
@@ -508,6 +510,7 @@ public:
                                                                     So,
                                                                     SoMax);
 
+            RsSat *= SolventModule::RsMult(pvtRegionIndex(), po, solventZ_());
             Scalar Rs = (*this)[Indices::compositionSwitchIdx];
             if (Rs > std::min(RsMax, RsSat*(1.0 + eps))) {
                 // the gas phase appears, i.e., switch the primary variables to { Sw, po,
@@ -638,6 +641,14 @@ private:
         return 0.0;
 
         if (primaryVarsMeaningSolvent_ == Rs)
+            return 0.0;
+
+        return (*this)[Indices::solventSaturationIdx];
+    }
+
+    Scalar solventZ_() const
+    {
+        if (!enableSolvent)
             return 0.0;
 
         return (*this)[Indices::solventSaturationIdx];

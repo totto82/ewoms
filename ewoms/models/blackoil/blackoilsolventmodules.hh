@@ -34,6 +34,7 @@
 
 #include <opm/material/fluidsystems/blackoilpvt/SolventPvt.hpp>
 #include <opm/material/common/Tabulated1DFunction.hpp>
+#include <opm/material/common/UniformXTabulated2DFunction.hpp>
 
 #if HAVE_ECL_INPUT
 #include <opm/parser/eclipse/Deck/Deck.hpp>
@@ -82,6 +83,8 @@ class BlackOilSolventModule
     typedef Opm::SolventPvt<Scalar> SolventPvt;
 
     typedef typename Opm::Tabulated1DFunction<Scalar> TabulatedFunction;
+    typedef typename Opm::UniformXTabulated2DFunction<Scalar> Tabulated2DFunction;
+
 
     static constexpr unsigned solventSaturationIdx = Indices::solventSaturationIdx;
     static constexpr unsigned contiSolventEqIdx = Indices::contiSolventEqIdx;
@@ -348,6 +351,54 @@ public:
                     setTlpmixpa(regionIdx, ones);
             }
         }
+
+        // initialize the objects which deal with the SSFN keyword
+        unsigned numPvtRegions = 1; //tableManager.getTabdims().getNumPvtTables();
+        {
+        X_.resize(numPvtRegions);
+        std::vector<double> z = {0.0,1.0};
+        std::vector<double> x = {0.0,1.0};
+        TabulatedFunction X = TabulatedFunction(2, z, x);
+        X_[0] = X;
+        }
+
+        {
+        Y_.resize(numPvtRegions);
+        std::vector<double> z = {0.0,1.0};
+        std::vector<double> y = {0.0,1.0};
+        TabulatedFunction Y = TabulatedFunction(2, z, y);
+        Y_[0] = Y;
+        }
+        {
+        B_.resize(numPvtRegions, Tabulated2DFunction{Tabulated2DFunction::InterpolationPolicy::LeftExtreme});
+        std::vector<double> z = {0.0,1.0};
+        std::vector<double> p = {1e5,800e5};
+        std::vector<double> b = {1.0,1.0, 1.0, 1.0};
+        for (size_t xIdx = 0; xIdx < z.size(); ++xIdx) {
+            B_[0].appendXPos(z[xIdx]);
+            for (size_t yIdx = 0; yIdx < p.size(); ++yIdx) {
+                B_[0].appendSamplePoint(xIdx,
+                                        p[yIdx],
+                                        b[xIdx*2+ yIdx]);
+            }
+        }
+        }
+
+        {
+        RS_.resize(numPvtRegions, Tabulated2DFunction{Tabulated2DFunction::InterpolationPolicy::LeftExtreme});
+        std::vector<double> z = {0.0,1.0};
+        std::vector<double> p = {1e5,800e5};
+        std::vector<double> rs = {1.0,1.0, 1.0, 1.0};
+        for (size_t xIdx = 0; xIdx < z.size(); ++xIdx) {
+            RS_[0].appendXPos(z[xIdx]);
+            for (size_t yIdx = 0; yIdx < p.size(); ++yIdx) {
+                RS_[0].appendSamplePoint(xIdx,
+                                        p[yIdx],
+                                        rs[xIdx*2+ yIdx]);
+            }
+        }
+        }
+
     }
 #endif
 
@@ -839,6 +890,43 @@ public:
         return isMiscible_;
     }
 
+    static const TabulatedFunction& TableX(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = elemCtx.problem().satnumRegionIndex(elemCtx, scvIdx, timeIdx);
+        return X_[satnumRegionIdx];
+    }
+
+    static const TabulatedFunction& TableY(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = elemCtx.problem().satnumRegionIndex(elemCtx, scvIdx, timeIdx);
+        return Y_[satnumRegionIdx];
+    }
+
+    static const Tabulated2DFunction& TableB(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = elemCtx.problem().satnumRegionIndex(elemCtx, scvIdx, timeIdx);
+        return B_[satnumRegionIdx];
+    }
+
+    static const Tabulated2DFunction& TableRs(const ElementContext& elemCtx,
+                                            unsigned scvIdx,
+                                            unsigned timeIdx)
+    {
+        unsigned satnumRegionIdx = elemCtx.problem().satnumRegionIndex(elemCtx, scvIdx, timeIdx);
+        return RS_[satnumRegionIdx];
+    }
+
+    static const Scalar RsMult(unsigned pvtRegionIdx, Scalar pressure, Scalar z) {
+        const auto& RsMultTable = RS_[pvtRegionIdx];
+        return RsMultTable.eval(z, pressure);
+    }
+
 
 private:
     static SolventPvt solventPvt_;
@@ -856,6 +944,12 @@ private:
     static std::vector<Scalar> tlMixParamViscosity_; // Todd-Longstaff mixing parameter for viscosity
     static std::vector<Scalar> tlMixParamDensity_;   //  Todd-Longstaff mixing parameter for density
     static std::vector<TabulatedFunction> tlPMixTable_; // the tlpmixpa(Po) column of the TLPMIXPA table
+
+    static std::vector<TabulatedFunction> X_;
+    static std::vector<TabulatedFunction> Y_;
+    static std::vector<Tabulated2DFunction> B_;
+    static std::vector<Tabulated2DFunction> RS_;
+
 
     static bool isMiscible_;
 };
@@ -918,6 +1012,22 @@ bool
 BlackOilSolventModule<TypeTag, enableSolventV>::isMiscible_;
 
 
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::TabulatedFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::X_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::TabulatedFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::Y_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::Tabulated2DFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::B_;
+
+template <class TypeTag, bool enableSolventV>
+std::vector<typename BlackOilSolventModule<TypeTag, enableSolventV>::Tabulated2DFunction>
+BlackOilSolventModule<TypeTag, enableSolventV>::RS_;
+
 /*!
  * \ingroup BlackOil
  * \class Ewoms::BlackOilSolventIntensiveQuantities
@@ -966,16 +1076,18 @@ public:
         auto& fs = asImp_().fluidState_;
         solventSaturation_ = 0.0;
 
-        Evaluation solventX = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
+        solventZ_ = priVars.makeEvaluation(solventSaturationIdx, timeIdx);
         //if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Ss)
         //    solventSaturation_ = solventX;
+        const auto& xtable = SolventModule::TableX(elemCtx, dofIdx, timeIdx);
+        const auto& ytable = SolventModule::TableY(elemCtx, dofIdx, timeIdx);
 
-        solventRs_ = fs.Rs() * solventX ; // rsSat;
-        solventSaturation_ = fs.saturation(gasPhaseIdx) * solventX;
+        solventRs_ = fs.Rs()* xtable.eval(solventZ_); // rsSat;
+        solventSaturation_ = fs.saturation(gasPhaseIdx) * ytable.eval(solventZ_);
         //if (priVars.primaryVarsMeaningSolvent() == PrimaryVariables::Rs)
         //    solventRs_ = solventX;
 
-        hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx) * (1.0 - solventX);
+        hydrocarbonSaturation_ = fs.saturation(gasPhaseIdx) - solventSaturation_;
         //fs.setRs(fs.Rs() * (1.0 - solventX) );
         //std::cout << solventSaturation_ << " " << solventRs_ << " " << priVars.primaryVarsMeaningSolvent() << std::endl;
         // apply a cut-off. Don't waste calculations if no solvent
@@ -1148,6 +1260,7 @@ public:
             //std::cout << "rv " << rv << " " << fs.Rv() << std::endl;
         }
 
+
         //if (solventXo() > 0)
         //    std::cout << "solventXo() "<< solventXo() << std::endl;
 
@@ -1157,19 +1270,21 @@ public:
         //fs.setRs( Opm::max( rs - solventRs(), 0.0) );
         //fs.setRv( Opm::max( rv, 0.0) );
 
-        const auto& boOrig = FluidSystem::inverseFormationVolumeFactor(fs, oilPhaseIdx, 0);
-        const auto& bgOrig = FluidSystem::inverseFormationVolumeFactor(fs, gasPhaseIdx, 0);
+        //const auto& boOrig = FluidSystem::inverseFormationVolumeFactor(fs, oilPhaseIdx, 0);
+        //const auto& bgOrig = FluidSystem::inverseFormationVolumeFactor(fs, gasPhaseIdx, 0);
 
-        Evaluation bo = fs.invB(oilPhaseIdx);
-        Evaluation bg = fs.invB(gasPhaseIdx);
-        const Evaluation& bs = solventInverseFormationVolumeFactor();
+        const Evaluation& bo = fs.invB(oilPhaseIdx);
+        //Evaluation bg = fs.invB(gasPhaseIdx);
+        //const Evaluation& bs = solventInverseFormationVolumeFactor();
+        const auto& btable = SolventModule::TableB(elemCtx, scvIdx, timeIdx);
+        Evaluation bmult = btable.eval(solventZ_, p);
 
         //bo = boOrig*(1.0 - solventXo());
         //std::cout << "bo " << bo << " "
         //bo += solventXo()*bs;
 
         //bo = boOrig*(1.0 - solventXo());
-        //fs.setInvB(oilPhaseIdx, bo);
+        fs.setInvB(oilPhaseIdx, bo*bmult);
 
         //bg = bgOrig*(1.0 - solventXg());
         //bg += solventXg()*bs;
@@ -1336,6 +1451,9 @@ public:
 
         return convertRvToXgO(solventRv(),0, true);
     }
+
+
+
 
 
     const Evaluation& solventSaturation() const
@@ -1530,6 +1648,7 @@ protected:
     Implementation& asImp_()
     { return *static_cast<Implementation*>(this); }
 
+    Evaluation solventZ_;
     Evaluation hydrocarbonSaturation_;
     Evaluation solventSaturation_;
     Evaluation solventRs_;
