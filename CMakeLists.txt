@@ -189,6 +189,7 @@ opm_add_test(finger_immiscible_ecfv_adaptive
 
 foreach(tapp co2injection_flash_ni_vcfv
              co2injection_flash_ni_ecfv
+             co2injection_uncover
              co2injection_flash_vcfv
              co2injection_flash_ecfv
              co2injection_ncp_ni_vcfv
