@@ -23,12 +23,12 @@
 /*!
  * \file
  *
- * \brief Test for the isothermal immiscible model using the CO2 injection
- *        example problem
+ * \brief Simulation of co2 in water in lab for UNCOVER
  */
 #include "config.h"
 
 #include <opm/models/utils/start.hh>
+//#include <opm/models/immiscible/immisciblemodel.hh>
 #include <opm/models/ncp/ncpmodel.hh>
 #include <opm/models/discretization/ecfv/ecfvdiscretization.hh>
 
