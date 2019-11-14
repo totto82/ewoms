@@ -1,9 +1,9 @@
 DGF
 
 Interval
-0 0   % first corner
-60 40   % second corner
-24 16   % cells in x and in y direction
+-0.2 -0.2       % first corner
+0.0 0.0   % second corner
+3 3     % cells in x and in y direction
 #
 
 GridParameter
