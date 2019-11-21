@@ -67,7 +67,8 @@ template <class TypeTag>
 class Co2InjectionProblem;
 
 namespace Co2Injection {
-#include <opm/material/components/co2tables.inc>
+//#include <opm/material/components/co2tables.inc>
+#include <opm/material/components/fineCo2TablesPureWater.inc>
 }
 //! \endcond
 }
@@ -309,8 +310,7 @@ public:
 
         // parameters for the Brooks-Corey law
         materialParams_.setEntryPressure(5e3);
-
-        materialParams_.setLambda(2.0);
+        materialParams_.setLambda(0.5);
 
 
         materialParams_.finalize();
@@ -485,8 +485,8 @@ public:
             //////
             // set saturations
             //////
-            fs.setSaturation(FluidSystem::liquidPhaseIdx, 0.0);
-            fs.setSaturation(FluidSystem::gasPhaseIdx, 1.0);
+            fs.setSaturation(FluidSystem::liquidPhaseIdx, 1.0);
+            fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
 
             //////
             // set pressures
@@ -497,7 +497,7 @@ public:
 
             Scalar densityL = FluidSystem::CO2::gasDensity(temperature_, Scalar(pressure_));
             Scalar depth = pos[dim - 1];
-            Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
+            Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth + 1e6;
 
             Scalar pC[numPhases];
             const auto& matParams = this->materialLawParams(context, spaceIdx, timeIdx);
@@ -509,21 +509,26 @@ public:
             //////
             // set composition of the liquid phase
             //////
-            fs.setMoleFraction(gasPhaseIdx, CO2Idx, 1.0);
-            fs.setMoleFraction(gasPhaseIdx, BrineIdx,
-                               1.0 - fs.moleFraction(gasPhaseIdx, CO2Idx));
+            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, 1.0);
+            fs.setMoleFraction(liquidPhaseIdx, BrineIdx,
+                               1.0 - fs.moleFraction(liquidPhaseIdx, CO2Idx));
+
+
+//            fs.setMoleFraction(gasPhaseIdx, CO2Idx, 1.0);
+//            fs.setMoleFraction(gasPhaseIdx, BrineIdx,
+//                               1.0 - fs.moleFraction(gasPhaseIdx, CO2Idx));
 
             typename FluidSystem::template ParameterCache<Scalar> paramCache;
             typedef Opm::ComputeFromReferencePhase<Scalar, FluidSystem> CFRP;
             CFRP::solve(fs, paramCache,
-                        /*refPhaseIdx=*/gasPhaseIdx,
+                        /*refPhaseIdx=*/liquidPhaseIdx,
                         /*setViscosity=*/true,
                         /*setEnthalpy=*/true);
 
             fs.checkDefined();
 
             // impose an freeflow boundary condition
-            values.setFreeFlow(context, spaceIdx, timeIdx, fs);
+            values.setInFlow(context, spaceIdx, timeIdx, fs);
         }
         else
             // no flow on top and bottom
@@ -644,7 +649,7 @@ private:
             // set composition of the liquid phase
             //////
 
-            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, 0.00001);
+            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, 0.00000);
             fs.setMoleFraction(liquidPhaseIdx, BrineIdx,
                                1.0 - fs.moleFraction(liquidPhaseIdx, CO2Idx));
 
