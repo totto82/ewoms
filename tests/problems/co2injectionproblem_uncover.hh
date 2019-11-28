@@ -170,6 +170,8 @@ SET_BOOL_PROP(Co2InjectionBaseProblem, NewtonWriteConvergence, false);
 // Enable gravity
 SET_BOOL_PROP(Co2InjectionBaseProblem, EnableGravity, true);
 
+SET_BOOL_PROP(Co2InjectionBaseProblem, EnableDiffusion, true);
+
 // set the defaults for the problem specific properties
 SET_SCALAR_PROP(Co2InjectionBaseProblem, FluidSystemPressureLow, 0.8e7);
 SET_SCALAR_PROP(Co2InjectionBaseProblem, FluidSystemPressureHigh, 1.2e7);
@@ -267,8 +269,9 @@ public:
     {
         ParentType::finishInit();
 
-        int refinement = EWOMS_GET_PARAM(TypeTag, Scalar, GridGlobalRefinements);
-        eps_ = 0.6 * 0.2 / 10 / std::pow(2,refinement);
+        unsigned refinement = EWOMS_GET_PARAM(TypeTag, unsigned, GridGlobalRefinements);
+        eps_ = 0.2 /2 / std::pow(2,refinement);
+
         pressure_ = 100 *1e5;
 
         temperatureLow_ = EWOMS_GET_PARAM(TypeTag, Scalar, FluidSystemTemperatureLow);
@@ -301,8 +304,15 @@ public:
         //some noise to generate fingers
         for (size_t i = 0; i < numDof; ++i) {
             double noise = this->norm_dist(this->rand_gen);
-            porosity_[i] += 10 * noise;
+            porosity_[i] += 1 * noise;
         }
+
+        molEps_.resize(numDof, 0.0);
+        for (size_t i = 0; i < numDof; ++i) {
+            double noise = this->norm_dist(this->rand_gen);
+            molEps_[i] += noise;
+        }
+
 
         // residual saturations
         materialParams_.setResidualSaturation(liquidPhaseIdx, 0.2);
@@ -319,6 +329,10 @@ public:
         solidEnergyLawParams_.setSolidHeatCapacity(790.0 // specific heat capacity of granite [J / (kg K)]
                                                    * 2700.0); // density of granite [kg/m^3]
         solidEnergyLawParams_.finalize();
+
+
+        enum { enableDiffusion = GET_PROP_VALUE(TypeTag, EnableDiffusion) };
+        std::cout << "enableDiffusion "<< enableDiffusion << std::endl;
     }
 
     /*!
@@ -495,9 +509,11 @@ public:
             ///
             ///
 
-            Scalar densityL = FluidSystem::CO2::gasDensity(temperature_, Scalar(pressure_));
+            //Scalar densityL = FluidSystem::CO2::gasDensity(temperature_, Scalar(pressure_));
+            Scalar densityL = FluidSystem::Brine::gasDensity(temperature_, Scalar(pressure_));
+
             Scalar depth = pos[dim - 1];
-            Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth + 1e6;
+            Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
 
             Scalar pC[numPhases];
             const auto& matParams = this->materialLawParams(context, spaceIdx, timeIdx);
@@ -509,7 +525,11 @@ public:
             //////
             // set composition of the liquid phase
             //////
-            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, 1.0);
+            unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+
+            //Scalar tmp = 0.9 + 1*molEps_[globalSpaceIdx];
+            Scalar tmp = std::min(0.01921, 0.01921 + 0.1*molEps_[globalSpaceIdx]);
+            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, tmp);
             fs.setMoleFraction(liquidPhaseIdx, BrineIdx,
                                1.0 - fs.moleFraction(liquidPhaseIdx, CO2Idx));
 
@@ -528,7 +548,11 @@ public:
             fs.checkDefined();
 
             // impose an freeflow boundary condition
-            values.setInFlow(context, spaceIdx, timeIdx, fs);
+            values.setFreeFlow(context, spaceIdx, timeIdx, fs);
+            //std::cout << globalSpaceIdx << " " << pos[0] << " " << pos[1] << std::endl;
+            //for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
+            //    std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(liquidPhaseIdx, compIdx) << std::endl;
+            //}
         }
         else
             // no flow on top and bottom
@@ -590,9 +614,11 @@ private:
         //////
         // set saturations
         //////
-        if (false && onTopCell_(pos)) {
-            fs.setSaturation(FluidSystem::liquidPhaseIdx, 0.0);
-            fs.setSaturation(FluidSystem::gasPhaseIdx, 1.0);
+
+        // This is used to test the whole cirle simulation
+        if (true && onTopCell_(pos)) {
+            fs.setSaturation(FluidSystem::liquidPhaseIdx, 1.0);
+            fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
 
             //////
             // set pressures
@@ -604,6 +630,7 @@ private:
             Scalar densityL = FluidSystem::Brine::gasDensity(temperature_, Scalar(pressure_));
 
             Scalar depth = pos[dim - 1];
+            // add a slight underpressure to start the fingers
             Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
 
             fs.setPressure(liquidPhaseIdx, pl + (pC[liquidPhaseIdx] - pC[liquidPhaseIdx]));
@@ -613,16 +640,16 @@ private:
             // set composition of the liquid phase
             //////
             double noise = this->norm_dist(this->rand_gen);
-            double co2fraction = std::min(1.0, 1.0 * (1.0 + 10 * noise));
-            std::cout << co2fraction << " " << noise << std::endl;
-            fs.setMoleFraction(gasPhaseIdx, CO2Idx, co2fraction);
-            fs.setMoleFraction(gasPhaseIdx, BrineIdx,
-                               1.0 - fs.moleFraction(gasPhaseIdx, CO2Idx));
+            double co2fraction = std::min(0.01921, 0.01921 * (1.0 + 1 * noise));
+            std::cout << co2fraction << std::endl;
+            fs.setMoleFraction(liquidPhaseIdx, CO2Idx, co2fraction);
+            fs.setMoleFraction(liquidPhaseIdx, BrineIdx,
+                               1.0 - fs.moleFraction(liquidPhaseIdx, CO2Idx));
 
             typename FluidSystem::template ParameterCache<Scalar> paramCache;
             typedef Opm::ComputeFromReferencePhase<Scalar, FluidSystem> CFRP;
             CFRP::solve(fs, paramCache,
-                        /*refPhaseIdx=*/gasPhaseIdx,
+                        /*refPhaseIdx=*/liquidPhaseIdx,
                         /*setViscosity=*/true,
                         /*setEnthalpy=*/true);
         } else {
@@ -640,6 +667,7 @@ private:
             Scalar densityL = FluidSystem::Brine::gasDensity(temperature_, Scalar(pressure_));
 
             Scalar depth = pos[dim - 1];
+            // add a slight underpressure to start the fingers
             Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
 
             fs.setPressure(liquidPhaseIdx, pl + (pC[liquidPhaseIdx] - pC[liquidPhaseIdx]));
@@ -667,7 +695,7 @@ private:
     { return pos[1] > -eps_; }
 
     bool onTop_(const GlobalPosition& pos) const
-    { return pos[1] > -eps_*0.05; }
+    { return pos[1] > -eps_*0.01; }
 
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)
     {
@@ -688,6 +716,7 @@ private:
 
     DimMatrix K_;
     std::vector<Scalar> porosity_;
+    std::vector<Scalar> molEps_;
 
     MaterialLawParams materialParams_;
 

@@ -56,6 +56,8 @@ class NcpBoundaryRateVector : public GET_PROP_TYPE(TypeTag, RateVector)
     enum { numComponents = GET_PROP_VALUE(TypeTag, NumComponents) };
     enum { conti0EqIdx = Indices::conti0EqIdx };
     enum { enableEnergy = GET_PROP_VALUE(TypeTag, EnableEnergy) };
+    enum { enableDiffusion = GET_PROP_VALUE(TypeTag, EnableDiffusion) };
+
 
     typedef Opm::EnergyModule<TypeTag, enableEnergy> EnergyModule;
 
@@ -111,6 +113,16 @@ public:
             else
                 density = Opm::getValue(insideIntQuants.fluidState().density(phaseIdx));
 
+            Evaluation rhoMolar;
+            if(enableDiffusion) {
+                if (focusDofIdx == interiorDofIdx)
+                    rhoMolar = (insideIntQuants.fluidState().molarDensity(phaseIdx)
+                            + fluidState.molarDensity(phaseIdx)) / 2;
+                else
+                    rhoMolar = (Opm::getValue(insideIntQuants.fluidState().molarDensity(phaseIdx))
+                            + Opm::getValue(fluidState.molarDensity(phaseIdx))) / 2;
+            }
+
             for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
                 Evaluation molarity;
                 if (fluidState.pressure(phaseIdx) > insideIntQuants.fluidState().pressure(phaseIdx)) {
@@ -127,7 +139,17 @@ public:
                 // add advective flux of current component in current
                 // phase
                 (*this)[conti0EqIdx + compIdx] += extQuants.volumeFlux(phaseIdx)*molarity;
+
+                // add diffusive flux of current component in current
+                // phase
+                if (enableDiffusion)
+                (*this)[conti0EqIdx + compIdx] +=
+                        -rhoMolar
+                        * extQuants.moleFractionGradientNormal(phaseIdx, compIdx)
+                        * extQuants.effectiveDiffusionCoefficient(phaseIdx, compIdx);
             }
+
+
 
             if (enableEnergy) {
                 Evaluation specificEnthalpy;
