@@ -298,6 +298,9 @@ public:
         // intrinsic permeabilities
         K_ = this->toDimMatrix_(76 * 9.8692 * 1e-13);
 
+        KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-6);
+
+
         // porosities
         size_t numDof = this->model().numGridDof();
         porosity_.resize(numDof,0.4);
@@ -424,7 +427,14 @@ public:
     const DimMatrix& intrinsicPermeability(const Context& context OPM_UNUSED,
                                            unsigned spaceIdx OPM_UNUSED,
                                            unsigned timeIdx OPM_UNUSED) const
-    { return K_; }
+    {
+        const auto& pos = context.pos(spaceIdx, timeIdx);
+        if (!inCircle_(pos)) {
+            return KK_;
+        } else {
+            return K_;
+        }
+    }
 
     /// Constant porosity
     template <class Context>
@@ -432,8 +442,13 @@ public:
                     unsigned spaceIdx,
                     unsigned timeIdx) const
     {
-        unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
-        return porosity_[globalSpaceIdx];
+        const auto& pos = context.pos(spaceIdx, timeIdx);
+        if (!inCircle_(pos)) {
+            return 1e-6;
+        } else {
+            unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+            return porosity_[globalSpaceIdx];
+        }
     }
 
     /*!
@@ -697,6 +712,11 @@ private:
     bool onTop_(const GlobalPosition& pos) const
     { return pos[1] > -eps_*0.01; }
 
+    bool inCircle_(const GlobalPosition& pos) const
+    {
+        //const std::vector<Scalar> origo = {0.0,0.0}
+        return (pos[0]*pos[0] + pos[1]*pos[1]) < 0.01;
+    }
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)
     {
         Scalar lambdaWater = 0.6;
@@ -715,6 +735,7 @@ private:
     //{ return pos[dim - 1] > fineLayerBottom_; }
 
     DimMatrix K_;
+    DimMatrix KK_;
     std::vector<Scalar> porosity_;
     std::vector<Scalar> molEps_;
 
