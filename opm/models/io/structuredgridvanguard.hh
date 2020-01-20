@@ -31,8 +31,8 @@
 #include <opm/models/utils/propertysystem.hh>
 #include <opm/models/utils/parametersystem.hh>
 
-#include <dune/grid/yaspgrid.hh>
-#include <dune/grid/io/file/dgfparser/dgfyasp.hh>
+#include "opm/grid/polyhedralgrid.hh"
+#include "opm/grid/cart_grid.h"
 
 #if HAVE_DUNE_ALUGRID
 #include <dune/alugrid/grid.hh>
@@ -45,7 +45,8 @@
 #include <vector>
 #include <memory>
 
-namespace Opm {
+namespace Opm
+{
 
 template <class TypeTag>
 class StructuredGridVanguard;
@@ -79,16 +80,17 @@ static const int dim = GRIDDIM;
 
 // set the Grid and Vanguard properties
 #if HAVE_DUNE_ALUGRID
-SET_TYPE_PROP(StructuredGridVanguard, Grid, Dune::ALUGrid< dim, dim, Dune::cube, Dune::nonconforming >);
+SET_TYPE_PROP(StructuredGridVanguard, Grid, Dune::ALUGrid<dim, dim, Dune::cube, Dune::nonconforming>);
 #else
-SET_TYPE_PROP(StructuredGridVanguard, Grid, Dune::YaspGrid< dim >);
+SET_TYPE_PROP(StructuredGridVanguard, Grid, Dune::PolyhedralGrid<dim, dim>);
 #endif
 
 SET_TYPE_PROP(StructuredGridVanguard, Vanguard, Opm::StructuredGridVanguard<TypeTag>);
 
 END_PROPERTIES
 
-namespace Opm {
+namespace Opm
+{
 
 /*!
  * \ingroup TestProblems
@@ -120,13 +122,15 @@ public:
                              "The size of the domain in x direction");
         EWOMS_REGISTER_PARAM(TypeTag, unsigned, CellsX,
                              "The number of intervalls in x direction");
-        if (dim > 1) {
+        if (dim > 1)
+        {
             EWOMS_REGISTER_PARAM(TypeTag, Scalar, DomainSizeY,
                                  "The size of the domain in y direction");
             EWOMS_REGISTER_PARAM(TypeTag, unsigned, CellsY,
                                  "The number of intervalls in y direction");
         }
-        if (dim > 2) {
+        if (dim > 2)
+        {
             EWOMS_REGISTER_PARAM(TypeTag, Scalar, DomainSizeZ,
                                  "The size of the domain in z direction");
             EWOMS_REGISTER_PARAM(TypeTag, unsigned, CellsZ,
@@ -137,26 +141,83 @@ public:
     /*!
      * \brief Create the grid for the lens problem
      */
-    StructuredGridVanguard(Simulator& simulator)
+    StructuredGridVanguard(Simulator &simulator)
         : ParentType(simulator)
     {
         Dune::FieldVector<int, dim> cellRes;
 
         typedef double GridScalar;
         Dune::FieldVector<GridScalar, dim> upperRight;
-        Dune::FieldVector<GridScalar, dim> lowerLeft( 0 );
+        Dune::FieldVector<GridScalar, dim> lowerLeft(0);
 
         upperRight[0] = EWOMS_GET_PARAM(TypeTag, Scalar, DomainSizeX);
         upperRight[1] = EWOMS_GET_PARAM(TypeTag, Scalar, DomainSizeY);
 
         cellRes[0] = EWOMS_GET_PARAM(TypeTag, unsigned, CellsX);
         cellRes[1] = EWOMS_GET_PARAM(TypeTag, unsigned, CellsY);
-        if (dim == 3) {
+        if (dim == 3)
+        {
             upperRight[2] = EWOMS_GET_PARAM(TypeTag, Scalar, DomainSizeZ);
             cellRes[2] = EWOMS_GET_PARAM(TypeTag, unsigned, CellsZ);
         }
+#if 0
+        if (dim == 3)
+        {
+            std::cout << cellRes[0] << cellRes[1] << ", " << cellRes[2] << ", " << upperRight[0] << ", " << upperRight[1] << ", " << upperRight[2] << std::endl;
 
-        std::stringstream dgffile;
+
+            UnstructuredGrid *grid = create_grid_hexa3d(cellRes[0], cellRes[1], cellRes[2],
+                                                        upperRight[0] / cellRes[0], upperRight[1] / cellRes[1], upperRight[2] / cellRes[2]);
+
+            Grid polyGrid(*grid);
+            GridPointer polygrid(new Grid(*grid));
+            gridPtr_ = std::move(polygrid);
+        }
+        else if (dim == 2)
+        {
+            UnstructuredGrid *grid = create_grid_cart2d(cellRes[0], cellRes[1], upperRight[0] / cellRes[0], upperRight[1] / cellRes[1]);
+            Grid polyGrid(*grid);
+            GridPointer polygrid(new Grid(*grid));
+            gridPtr_ = std::move(polygrid);
+        }
+                else
+        {
+            throw "Not implemented for current dimension";
+        }
+#else
+        std::string file_name{"/home/runar/work/porepy/src/porepy/opm_interface/ioWriter.py"};
+        std::ostringstream command;
+        command << "python " << file_name << " " << cellRes[0] << " " << cellRes[1];
+        if (dim == 3)
+            command << " " << cellRes[2];
+        command << " " << upperRight[0] / cellRes[0] << " " << upperRight[1] / cellRes[1];
+        if (dim == 3)
+            command << " " << upperRight[2] / cellRes[2];
+        command << " ./porepy_grid.txt";
+
+        std::cout << "Calling python: " << std::endl
+                  << std::flush;
+        system(command.str().c_str());
+        std::cout << "finished " << std::endl
+                  << std::flush;
+        const char *c_str = "porepy_grid.txt";
+        std::cout << "reading grid " << std::endl
+                  << std::flush;
+        UnstructuredGrid *grid = read_grid(c_str);
+        std::cout << "finished " << std::endl
+                  << std::flush;
+
+        std::cout <<"printing grid"<< std::endl;
+        print_grid(grid);
+ 
+
+        Grid polyGrid(*grid);
+        GridPointer polygrid(new Grid(*grid));
+        gridPtr_ = std::move(polygrid);
+        //UnstructuredGrid *grid = create_grid_hexa3d(2, 2, 2, 1, 1, 1);
+#endif
+
+        /*       std::stringstream dgffile;
         dgffile << "DGF" << std::endl;
         dgffile << "INTERVAL" << std::endl;
         dgffile << lowerLeft  << std::endl;
@@ -174,21 +235,25 @@ public:
 
         unsigned numRefinements = EWOMS_GET_PARAM(TypeTag, unsigned, GridGlobalRefinements);
         gridPtr_->globalRefine(static_cast<int>(numRefinements));
-
+ */
         this->finalizeInit_();
     }
 
     /*!
      * \brief Return a reference to the grid object.
      */
-    Grid& grid()
-    { return *gridPtr_; }
+    Grid &grid()
+    {
+        return *gridPtr_;
+    }
 
     /*!
      * \brief Return a constant reference to the grid object.
      */
-    const Grid& grid() const
-    { return *gridPtr_; }
+    const Grid &grid() const
+    {
+        return *gridPtr_;
+    }
 
 private:
     GridPointer gridPtr_;

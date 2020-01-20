@@ -43,6 +43,8 @@
 #include <opm/material/components/Dnapl.hpp>
 #include <opm/material/common/Unused.hpp>
 
+#include <opm/grid/polyhedralgrid/grid.hh>
+
 #include <dune/common/version.hh>
 #include <dune/common/fvector.hh>
 #include <dune/common/fmatrix.hh>
@@ -72,7 +74,7 @@ NEW_PROP_TAG(LensUpperRightZ);
 SET_TYPE_PROP(LensBaseProblem, Problem, Opm::LensProblem<TypeTag>);
 
 // Use Dune-grid's YaspGrid
-SET_TYPE_PROP(LensBaseProblem, Grid, Dune::YaspGrid<2>);
+SET_TYPE_PROP(LensBaseProblem, Grid, Dune::PolyhedralGrid<2, 2>);
 
 // Set the wetting phase
 SET_PROP(LensBaseProblem, WettingPhase)
@@ -137,9 +139,9 @@ SET_SCALAR_PROP(LensBaseProblem, DomainSizeX, 6.0);
 SET_SCALAR_PROP(LensBaseProblem, DomainSizeY, 4.0);
 SET_SCALAR_PROP(LensBaseProblem, DomainSizeZ, 1.0);
 
-SET_INT_PROP(LensBaseProblem, CellsX, 48);
-SET_INT_PROP(LensBaseProblem, CellsY, 32);
-SET_INT_PROP(LensBaseProblem, CellsZ, 16);
+SET_INT_PROP(LensBaseProblem, CellsX, 20);
+SET_INT_PROP(LensBaseProblem, CellsY, 20);
+SET_INT_PROP(LensBaseProblem, CellsZ, 10);
 
 // The default for the end time of the simulation
 SET_SCALAR_PROP(LensBaseProblem, EndTime, 30e3);
@@ -269,7 +271,8 @@ public:
         lensMaterialParams_.finalize();
         outerMaterialParams_.finalize();
 
-        lensK_ = this->toDimMatrix_(9.05e-12);
+        //lensK_ = this->toDimMatrix_(9.05e-12);
+        lensK_ = this->toDimMatrix_(4.6e-10);
         outerK_ = this->toDimMatrix_(4.6e-10);
 
         if (dimWorld == 3) {
@@ -415,7 +418,8 @@ public:
      * \copydoc FvBaseProblem::beginTimeStep
      */
     void beginTimeStep()
-    { }
+    {//std::cout << "BEGINING TIMESTEP !!!!!!!!!!!!!!"<<std::endl <<std::flush; 
+    }
 
     /*!
      * \copydoc FvBaseProblem::beginIteration
@@ -437,7 +441,7 @@ public:
 
         // Write mass balance information for rank 0
         if (this->gridView().comm().rank() == 0) {
-            std::cout << "Storage: " << storage << std::endl << std::flush;
+            //std::cout << "Storage: " << storage << std::endl << std::flush;
         }
 #endif // NDEBUG
     }
@@ -458,6 +462,7 @@ public:
                   unsigned spaceIdx,
                   unsigned timeIdx) const
     {
+        //std::cout << "-------------------Begin boundary(..)-----------------------"<<std::endl;
         const GlobalPosition& pos = context.pos(spaceIdx, timeIdx);
 
         if (onLeftBoundary_(pos) || onRightBoundary_(pos)) {
@@ -470,6 +475,8 @@ public:
 
             // set wetting phase pressure and saturation
             if (onLeftBoundary_(pos)) {
+            //std::cout << "is on left boundary! \n"<< std::endl;
+
                 Scalar height = this->boundingBoxMax()[1] - this->boundingBoxMin()[1];
                 Scalar depth = this->boundingBoxMax()[1] - pos[1];
                 Scalar alpha = (1 + 1.5 / height);
@@ -479,6 +486,7 @@ public:
                 Sw = 1.0;
             }
             else {
+                //std::cout << "is on right boundary!"<< std::endl;
                 Scalar depth = this->boundingBoxMax()[1] - pos[1];
 
                 // hydrostatic pressure
@@ -510,6 +518,7 @@ public:
             values.setFreeFlow(context, spaceIdx, timeIdx, fs);
         }
         else if (onInlet_(pos)) {
+            //std::cout << "is on inlet boundary!"<<std::endl;
             RateVector massRate(0.0);
             massRate = 0.0;
             massRate[contiNEqIdx] = -0.04; // kg / (m^2 * s)
@@ -518,9 +527,11 @@ public:
             values.setMassRate(massRate);
         }
         else {
+            //std::cout << "is on noflow boundary! \n";
             // no flow boundary
             values.setNoFlow();
         }
+        //std::cout << "End of boundary function"<<std::endl;
     }
 
     //! \}
@@ -586,6 +597,7 @@ public:
 private:
     bool isInLens_(const GlobalPosition& pos) const
     {
+        return false;
         for (unsigned i = 0; i < dim; ++i) {
             if (pos[i] < lensLowerLeft_[i] - eps_ || pos[i] > lensUpperRight_[i]
                                                               + eps_)
@@ -610,7 +622,7 @@ private:
     {
         Scalar width = this->boundingBoxMax()[0] - this->boundingBoxMin()[0];
         Scalar lambda = (this->boundingBoxMax()[0] - pos[0]) / width;
-        return onUpperBoundary_(pos) && 0.5 < lambda && lambda < 2.0 / 3.0;
+        return onUpperBoundary_(pos);// && 0.5 < lambda && lambda < 2.0 / 3.0;
     }
 
     GlobalPosition lensLowerLeft_;
