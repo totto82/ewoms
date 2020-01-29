@@ -73,9 +73,9 @@ NEW_PROP_TAG(GridGlobalRefinements);
 
 // GRIDDIM is only set by the finger problem
 #ifndef GRIDDIM
-static const int dim = 2;
+static const int dim = 3;
 #else
-static const int dim = GRIDDIM;
+static const int dim = 3; //GRIDDIM;
 #endif
 
 // set the Grid and Vanguard properties
@@ -200,15 +200,18 @@ public:
 //        system(command.str().c_str());
 //        std::cout << "finished " << std::endl
 //                  << std::flush;
-        const char *c_str = "porepy_grid.txt";
+
+        std::cout << " ---- dim -------- " << dim << std::endl;
+        const char *c_str = dim == 2 ? "porepy_grid2d.txt" : "porepy_grid3d.txt";
         std::cout << "reading grid " << std::endl
                   << std::flush;
         UnstructuredGrid *grid = read_grid(c_str);
+        std::cout << grid->dimensions << std::endl;
         std::cout << "finished " << std::endl
                   << std::flush;
 
         std::cout <<"printing grid"<< std::endl;
-        print_grid(grid);
+        //print_grid(grid);
  
 
         Grid polyGrid(*grid);
