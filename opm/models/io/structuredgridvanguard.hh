@@ -185,21 +185,21 @@ public:
             throw "Not implemented for current dimension";
         }
 #else
-        std::string file_name{"/home/runar/work/porepy/src/porepy/opm_interface/ioWriter.py"};
-        std::ostringstream command;
-        command << "python " << file_name << " " << cellRes[0] << " " << cellRes[1];
-        if (dim == 3)
-            command << " " << cellRes[2];
-        command << " " << upperRight[0] / cellRes[0] << " " << upperRight[1] / cellRes[1];
-        if (dim == 3)
-            command << " " << upperRight[2] / cellRes[2];
-        command << " ./porepy_grid.txt";
+//        std::string file_name{"/home/runar/work/porepy/src/porepy/opm_interface/ioWriter.py"};
+//        std::ostringstream command;
+//        command << "python " << file_name << " " << cellRes[0] << " " << cellRes[1];
+//        if (dim == 3)
+//            command << " " << cellRes[2];
+//        command << " " << upperRight[0] / cellRes[0] << " " << upperRight[1] / cellRes[1];
+//        if (dim == 3)
+//            command << " " << upperRight[2] / cellRes[2];
+//        command << " ./porepy_grid.txt";
 
-        std::cout << "Calling python: " << std::endl
-                  << std::flush;
-        system(command.str().c_str());
-        std::cout << "finished " << std::endl
-                  << std::flush;
+//        std::cout << "Calling python: " << std::endl
+//                  << std::flush;
+//        system(command.str().c_str());
+//        std::cout << "finished " << std::endl
+//                  << std::flush;
         const char *c_str = "porepy_grid.txt";
         std::cout << "reading grid " << std::endl
                   << std::flush;
