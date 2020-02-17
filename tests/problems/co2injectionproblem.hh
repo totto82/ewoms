@@ -395,6 +395,23 @@ public:
             return temperature_ + 100;
         return temperature_;
     }
+	
+	
+	template <class Context>
+    void intersectionIntrinsicPermeability(DimMatrix& result,
+                                           const Context& context,
+                                           unsigned intersectionIdx,
+                                           unsigned timeIdx) const
+    {
+        const auto& scvf = context.stencil(timeIdx).interiorFace(intersectionIdx);
+		const auto& pos = scvf.integrationPos();
+		ParentType::intersectionIntrinsicPermeability(result,context, intersectionIdx, timeIdx);
+		if (isDeformation_(pos) )
+			for (unsigned i = 0; i < dimWorld; ++i)
+				for (unsigned j = 0; j < dimWorld; ++j)
+					result[i][j] *= 100;
+		
+	}
 
     /*!
      * \copydoc FvBaseMultiPhaseProblem::intrinsicPermeability
@@ -608,6 +625,9 @@ private:
     bool inHighTemperatureRegion_(const GlobalPosition& pos) const
     { return (pos[0] > 20) && (pos[0] < 30) && (pos[1] > 5) && (pos[1] < 35); }
 
+    bool isDeformation_(const GlobalPosition& pos) const
+	{ return (pos[0] == 2.5); }
+	
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)
     {
         Scalar lambdaWater = 0.6;
