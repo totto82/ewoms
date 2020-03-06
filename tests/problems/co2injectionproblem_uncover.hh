@@ -60,6 +60,7 @@
 #include <sstream>
 #include <iostream>
 #include <string>
+#include <random>
 
 namespace Opm {
 //! \cond SKIP_THIS
@@ -191,7 +192,11 @@ SET_SCALAR_PROP(Co2InjectionBaseProblem, EndTime, 2*3600);
 SET_SCALAR_PROP(Co2InjectionBaseProblem, InitialTimeStepSize, 1e-3);
 
 // The default DGF file to load
-SET_STRING_PROP(Co2InjectionBaseProblem, GridFile, "data/uncover.dgf");
+SET_STRING_PROP(Co2InjectionBaseProblem, GridFile, "data/co2injection.dgf");
+SET_INT_PROP(Co2InjectionBaseProblem, GridGlobalRefinements, 5);
+
+// Adjust tolerance of the newton solver
+SET_SCALAR_PROP(Co2InjectionBaseProblem, NewtonTolerance, 1e-6);
 
 END_PROPERTIES
 
@@ -297,6 +302,8 @@ public:
 
         // intrinsic permeabilities
         K_ = this->toDimMatrix_(76 * 9.8692 * 1e-13);
+		
+		K1_ = this->toDimMatrix_(0.1* 76 * 9.8692 * 1e-13);
 
         KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-6);
 
@@ -307,7 +314,8 @@ public:
         //some noise to generate fingers
         for (size_t i = 0; i < numDof; ++i) {
             double noise = this->norm_dist(this->rand_gen);
-            porosity_[i] += 1 * noise;
+			//std::cout << "noise "<< noise << std::endl;
+            porosity_[i] += 100 * noise;
         }
 
         molEps_.resize(numDof, 0.0);
@@ -428,12 +436,18 @@ public:
                                            unsigned spaceIdx OPM_UNUSED,
                                            unsigned timeIdx OPM_UNUSED) const
     {
-        const auto& pos = context.pos(spaceIdx, timeIdx);
-        if (!inCircle_(pos)) {
+		// TODO play with different layers 
+        const auto& pos = context.pos(spaceIdx, timeIdx);	
+		if (!inCircle_(pos)) {
             return KK_;
-        } else {
-            return K_;
-        }
+        } else if(pos[1]>0.05 && pos[1] < 0.08) {
+            return K1_;
+		} else {
+			return K_;
+		}
+        
+		
+		
     }
 
     /// Constant porosity
@@ -656,7 +670,7 @@ private:
             //////
             double noise = this->norm_dist(this->rand_gen);
             double co2fraction = std::min(0.01921, 0.01921 * (1.0 + 1 * noise));
-            std::cout << co2fraction << std::endl;
+            //std::cout << co2fraction << std::endl;
             fs.setMoleFraction(liquidPhaseIdx, CO2Idx, co2fraction);
             fs.setMoleFraction(liquidPhaseIdx, BrineIdx,
                                1.0 - fs.moleFraction(liquidPhaseIdx, CO2Idx));
@@ -707,15 +721,15 @@ private:
     }
 
     bool onTopCell_(const GlobalPosition& pos) const
-    { return pos[1] > -eps_; }
+    { return pos[1] > 0.1 - eps_; }
 
     bool onTop_(const GlobalPosition& pos) const
-    { return pos[1] > -eps_*0.01; }
+    { return pos[1] > 0.1 - eps_*0.01; }
 
     bool inCircle_(const GlobalPosition& pos) const
     {
-        //const std::vector<Scalar> origo = {0.0,0.0}
-        return (pos[0]*pos[0] + pos[1]*pos[1]) < 0.01;
+        const std::vector<Scalar> origo = {0.1,0.1};
+        return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < 0.01;
     }
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)
     {
@@ -735,6 +749,7 @@ private:
     //{ return pos[dim - 1] > fineLayerBottom_; }
 
     DimMatrix K_;
+	DimMatrix K1_;
     DimMatrix KK_;
     std::vector<Scalar> porosity_;
     std::vector<Scalar> molEps_;
