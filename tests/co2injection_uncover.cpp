@@ -33,7 +33,8 @@
 #include <opm/models/discretization/ecfv/ecfvdiscretization.hh>
 
 //#include "problems/co2injectionproblem.hh"
-#include "problems/co2injectionproblem_uncover.hh"
+//#include "problems/co2injectionproblem_uncover.hh"
+#include "problems/co2injectionproblem_uncover_perm.hh"
 
 BEGIN_PROPERTIES
 

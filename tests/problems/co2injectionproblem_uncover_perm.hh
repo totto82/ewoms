@@ -306,6 +306,8 @@ public:
         // intrinsic permeabilities
         K_ = this->toDimMatrix_(76 * 9.8692 * 1e-13);
 		
+		K1_ = this->toDimMatrix_(0.1* 76 * 9.8692 * 1e-13);
+
         KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-6);
 
 
@@ -441,6 +443,8 @@ public:
         const auto& pos = context.pos(spaceIdx, timeIdx);	
 		if (!inCircle_(pos)) {
             return KK_;
+        } else if(pos[1]>0.05 && pos[1] < 0.08) {
+            return K1_;
 		} else {
 			return K_;
 		}
@@ -748,6 +752,7 @@ private:
     //{ return pos[dim - 1] > fineLayerBottom_; }
 
     DimMatrix K_;
+	DimMatrix K1_;
     DimMatrix KK_;
     std::vector<Scalar> porosity_;
     std::vector<Scalar> molEps_;
