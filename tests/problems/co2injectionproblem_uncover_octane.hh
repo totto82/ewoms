@@ -58,6 +58,8 @@
 #include <sstream>
 #include <iostream>
 #include <string>
+#include <fstream>
+
 
 namespace Opm {
 //! \cond SKIP_THIS
@@ -158,6 +160,9 @@ SET_TAG_PROP(Co2InjectionBaseProblem, LinearSolverSplice, ParallelAmgLinearSolve
 
 // Write the Newton convergence behavior to disk?
 SET_BOOL_PROP(Co2InjectionBaseProblem, NewtonWriteConvergence, false);
+
+// Newton convergence tolerance --newton-tolerance=
+SET_SCALAR_PROP(Co2InjectionBaseProblem, NewtonTolerance, 1e-6);
 
 // Enable gravity
 SET_BOOL_PROP(Co2InjectionBaseProblem, EnableGravity, true);
@@ -279,17 +284,20 @@ public:
 
         // intrinsic permeabilities
         K_ = this->toDimMatrix_(76 * 9.8692 * 1e-13);
+		
+		//K_ = this->toDimMatrix_(2.11e3 * 9.8692 * 1e-13);
         // impermeable at the outside of the domain
-        KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-6);
+        KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-3);
 
 
         // porosities
         size_t numDof = this->model().numGridDof();
-        porosity_.resize(numDof,0.4);
+        //porosity_.resize(numDof,0.4);
+		porosity_.resize(numDof,0.4);
         //some noise to generate fingers
         for (size_t i = 0; i < numDof; ++i) {
             double noise = this->norm_dist(this->rand_gen);
-            porosity_[i] += 1 * noise;
+            porosity_[i] += 10 * noise;
         }
 
         molEps_.resize(numDof, 0.0);
@@ -298,6 +306,11 @@ public:
             molEps_[i] += noise;
         }
 
+		oilFluxes_.resize(numDof, 0.0);
+		std::ofstream myfile;
+		myfile.open ("example.txt");
+		myfile << "time - oil phase volume rate \n";
+		myfile.close();
 
         // residual saturations
         materialParams_.setResidualSaturation(oilPhaseIdx, 0.2);
@@ -398,6 +411,12 @@ public:
     bool shouldWriteRestartFile() {
 	    return false;
     }
+	void beginTimeStep()
+	{ 	
+	//oilFlux_ = 0.0;
+	//gasFlux_ = 0.0;
+	}
+	
     /*!
      * \copydoc FvBaseProblem::endTimeStep
      */
@@ -418,6 +437,18 @@ public:
                       << " gas=[" << storageG << "]\n" << std::flush;
         }
 #endif // NDEBUG
+
+		Scalar oilFlux = 0.0;
+		for (int i = 0; i < oilFluxes_.size(); ++i)
+		{
+			oilFlux += oilFluxes_[i];
+		}
+		std::ofstream myfile;
+		myfile.open ("example.txt", std::ios_base::app);
+		myfile << std::to_string(this->simulator().time()) << " " << std::to_string(oilFlux * this->simulator().timeStepSize()) <<"\n";
+		myfile.close();
+		std::cout << this->simulator().time() << " " << oilFlux * this->simulator().timeStepSize() << std::endl;
+		//std::cout << gasFlux_ * this->simulator().timeStepSize() << std::endl;
     }
 
     /// Constant temperature
@@ -541,9 +572,11 @@ public:
             unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
 
             //Scalar tmp = 0.9 + 1*molEps_[globalSpaceIdx];
-            Scalar min_mol_frac = 1e-1;
-            Scalar tmp = std::min(min_mol_frac, min_mol_frac * (1.0 + molEps_[globalSpaceIdx]));
-            fs.setMoleFraction(oilPhaseIdx, CO2Idx, tmp);
+            Scalar min_mol_frac = 0.4; // 1.2e-2;
+            //min_mol_frac = std::min(min_mol_frac, min_mol_frac * (1.0 + molEps_[globalSpaceIdx]));
+            min_mol_frac = min_mol_frac * (1.0 + molEps_[globalSpaceIdx]);
+
+            fs.setMoleFraction(oilPhaseIdx, CO2Idx, min_mol_frac);
             fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
                                1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
 
@@ -561,9 +594,11 @@ public:
             
             // Some output
             //std::cout << globalSpaceIdx << " " << pos[0] << " " << pos[1] << std::endl;
-            //for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
-            //    std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(oilPhaseIdx, compIdx) << std::endl;
-            //}
+            for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
+                //std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(oilPhaseIdx, compIdx) << std::endl;
+				oilFluxes_[globalSpaceIdx] = Opm::getValue(values[OctaneIdx]/fs.molarity(oilPhaseIdx, OctaneIdx));
+				//gasFlux_ += Opm::getValue(values[CO2Idx]);				
+            }
         }
         else
             // no flow on top and bottom
@@ -656,7 +691,7 @@ private:
 
     bool inCircle_(const GlobalPosition& pos) const
     {
-        //return true; 
+        //return true; // change this to always return true if you want square
         const std::vector<Scalar> origo = {0.1,0.1};
         return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < 0.01;
     }
@@ -679,6 +714,9 @@ private:
     DimMatrix KK_;
     std::vector<Scalar> porosity_;
     std::vector<Scalar> molEps_;
+	
+	mutable std::vector<Scalar> oilFluxes_;
+	//mutable Scalar gasFlux_;
 
     MaterialLawParams materialParams_;
 

@@ -112,7 +112,7 @@ public:
     static bool isIdealMixture(unsigned phaseIdx)
     {
         if (phaseIdx == oilPhaseIdx)
-            return false;
+            return true;
 
         // CO2 have associative effects with octane
         return true;
@@ -292,9 +292,9 @@ public:
 
             #warning We use constant viscosity. These needs to be checked
             if(phaseIdx == oilPhaseIdx) {
-                return 5e-4; //EOS::oleic_viscosity(T, p, x);
+                return 5e-4; 
             } else {
-                return 1e-5; //EOS::aqueous_viscosity(T, p, x);
+                return 1e-5; 
             }
         }
 
@@ -345,9 +345,9 @@ public:
 #if 1
 #warning HACK We use henry's law
                 if (compIdx == OctaneIdx)
-                    return 40e3/fluidState.pressure(oilPhaseIdx);
+                    return 26.6e3/fluidState.pressure(oilPhaseIdx);
                 else
-                return 500e3/fluidState.pressure(oilPhaseIdx);
+                return 40e3/fluidState.pressure(oilPhaseIdx);
 #else
                 if (compIdx == CO2Idx)
                     return 500e3/fluidState.pressure(oilPhaseIdx);

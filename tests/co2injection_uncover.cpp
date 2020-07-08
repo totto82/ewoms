@@ -26,7 +26,6 @@
  * \brief Simulation of co2 in water in lab for UNCOVER
  */
 #include "config.h"
-
 #include <opm/models/utils/start.hh>
 //#include <opm/models/immiscible/immisciblemodel.hh>
 #include <opm/models/ncp/ncpmodel.hh>
