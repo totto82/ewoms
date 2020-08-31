@@ -334,6 +334,50 @@ public:
                                                    * 2700.0); // density of granite [kg/m^3]
         solidEnergyLawParams_.finalize();
 
+        std::ofstream myfile;
+        myfile.open (outputFileName_);
+        myfile << "time - total porosity \n";
+        myfile.close();
+
+//        if (this->gridView().comm().rank() == 0) {
+//        int n = 100;
+//        for (int i = 0; i <(n+1); i++) {
+//        Opm::CompositionalFluidState<Scalar, FluidSystem> fs;
+
+//        //////
+//        // set temperature
+//        //////
+//        fs.setTemperature(323.15);
+
+//        //////
+//        // set saturations
+//        //////
+//        fs.setSaturation(FluidSystem::oilPhaseIdx, 1.0);
+//        fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
+
+//        fs.setPressure(oilPhaseIdx, pressure_);
+//        fs.setPressure(gasPhaseIdx, pressure_);
+
+//        //////
+//        // set composition of the liquid phase
+//        //////
+//        Scalar x = i*1.0/n;
+//        fs.setMoleFraction(oilPhaseIdx, CO2Idx, x);
+//        fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
+//                           1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
+
+//        typename FluidSystem::template ParameterCache<Scalar> paramCache;
+//        typedef Opm::ComputeFromReferencePhase<Scalar, FluidSystem> CFRP;
+//        CFRP::solve(fs, paramCache,
+//                    /*refPhaseIdx=*/oilPhaseIdx,
+//                    /*setViscosity=*/true,
+//                    /*setEnthalpy=*/false);
+
+//        fs.checkDefined();
+//        std::cout << fs.moleFraction(oilPhaseIdx, CO2Idx) << " " << fs.density(oilPhaseIdx) << std::endl;
+//        }
+//        }
+
     }
 
     /*!
@@ -447,6 +491,42 @@ public:
                       << " gas=[" << storageG << "]\n" << std::flush;
         }
 #endif // NDEBUG
+
+        Scalar totalPV = 0.0;
+        const auto& simulator = this->simulator();
+        ElementContext elemCtx(simulator);
+        const auto& vanguard = simulator.vanguard();
+        auto elemIt = vanguard.gridView().template begin</*codim=*/0>();
+        const auto& elemEndIt = vanguard.gridView().template end</*codim=*/0>();
+        for (; elemIt != elemEndIt; ++elemIt) {
+            const Element& elem = *elemIt;
+
+            elemCtx.updatePrimaryStencil(elem);
+
+            const auto& pos = elemCtx.pos(/*spaceIdx=*/0, /*timeIdx=*/0);
+            if (!inCircle_(pos)) {
+                continue;
+            }
+
+            elemCtx.updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
+            const auto& iq = elemCtx.intensiveQuantities(/*spaceIdx=*/0, /*timeIdx=*/0);
+            const auto& fs = iq.fluidState();
+
+            if (fs.moleFraction(oilPhaseIdx, CO2Idx) > 0.99)
+                continue;
+
+            //sum porosities (assumes all volumes are the same)
+            totalPV += Opm::getValue(iq.porosity());
+        }
+
+        this->gridView().comm().sum(totalPV);
+        if (this->gridView().comm().rank() == 0) {
+            std::ofstream myfile;
+            myfile.open (outputFileName_, std::ios_base::app);
+            myfile << std::to_string(this->simulator().time()) << " "
+                   << std::to_string(totalPV) << "\n";
+            myfile.close();
+        }
     }
 
     /// Constant temperature
@@ -480,7 +560,12 @@ public:
         if (!inCircle_(pos)) {
             return 1e-6;
         } else {
+
             unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+
+            //if(onTopCircle_(pos))
+            //    return std::min(1.0, porosity_[globalSpaceIdx] + 0.59); //make it close to 1.0 (0.4+0.6)
+
             return porosity_[globalSpaceIdx];
         }
     }
@@ -537,6 +622,7 @@ public:
     {
         const auto& pos = context.pos(spaceIdx, timeIdx);
         if (onTop_(pos)) {
+            //std::cout << "boundary " << pos[0] << " " << pos[1] << std::endl;
             Opm::CompositionalFluidState<Scalar, FluidSystem> fs;
             const GlobalPosition& pos = context.pos(spaceIdx, timeIdx);
 
@@ -722,13 +808,23 @@ private:
     { return pos[1] > 0.1; }
 
     bool onTop_(const GlobalPosition& pos) const
-    { return pos[1] > 0.2 - eps_*0.01; }
+    { return pos[1] > 0.2 - eps_*0.001; }
 
-    bool inCircle_(const GlobalPosition& pos) const
+    bool inCircle_(const GlobalPosition& pos, bool boundary=false) const
     {
-        return true; // change this to always return true if you want square
-        //const std::vector<Scalar> origo = {0.1,0.1};
-        //return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < 0.01;
+        if (true)
+            return true; // change this to always return true if you want square
+
+        const std::vector<Scalar> origo = {0.1,0.1};
+        Scalar radius2 = 0.01;
+        if (boundary) {
+            radius2 += eps_*.001;
+            //std::cout << ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) << std::endl;
+        }
+
+
+
+        return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < radius2;
     }
 
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)

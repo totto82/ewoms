@@ -46,38 +46,45 @@ class ChiwomsCO2 : public Opm::SimpleCO2<Scalar>
 public:
     /// Acentric factor
     static Scalar acentricFactor() { return 0.225; }
+
+    /// Critical density
+    static Scalar criticalDensity() { return 467.6; }
 };
 
 template <class Scalar>
-class Octane : public Opm::Component<Scalar, Octane<Scalar> >
+class Decane : public Opm::Component<Scalar, Decane<Scalar> >
 {
 public:
+        /// copied from cool probleps
         /// Chemical name
-        static const char* name() { return "C8"; }
+        static const char* name() { return "C10"; }
 
         /// Molar mass in \f$\mathrm{[kg/mol]}\f$
-        static Scalar molarMass() { return 0.11423; }
+        static Scalar molarMass() { return 0.1422817; }
 
         /// Critical temperature in \f$\mathrm[K]}\f$
-        static Scalar criticalTemperature() { return 568.7; }
+        static Scalar criticalTemperature() { return 617.7; }
 
         /// Critical pressure in \f$\mathrm[Pa]}\f$
-        static Scalar criticalPressure() { return 2.49e6; }
+        static Scalar criticalPressure() { return 2.11e6; }
 
         /// Acentric factor
-        static Scalar acentricFactor() { return 0.398; }
+        static Scalar acentricFactor() { return 0.4884; }
+
+        /// Critical density
+        static Scalar criticalDensity() { return 228; }
 };
 /*!
  * \ingroup Fluidsystems
  *
- * \brief A two-phase fluid system with brine and octane as the main components
+ * \brief A two-phase fluid system with brine and decane as the main components
  * in each their phase, and CO2 as solvent in both.
  */
 template <class Scalar>
-class TwoPhaseCo2OctaneFluidSystem
-        : public Opm::BaseFluidSystem<Scalar, TwoPhaseCo2OctaneFluidSystem<Scalar> >
+class TwoPhaseCo2DecaneFluidSystem
+        : public Opm::BaseFluidSystem<Scalar, TwoPhaseCo2DecaneFluidSystem<Scalar> >
 {
-    typedef TwoPhaseCo2OctaneFluidSystem<Scalar> ThisType;
+    typedef TwoPhaseCo2DecaneFluidSystem<Scalar> ThisType;
     typedef Opm::BaseFluidSystem<Scalar, ThisType> Base;
     typedef typename Opm::PengRobinson<Scalar> PengRobinson;
     typedef typename Opm::PengRobinsonMixture<Scalar, ThisType> PengRobinsonMixture;
@@ -114,7 +121,7 @@ public:
         if (phaseIdx == oilPhaseIdx)
             return true;
 
-        // CO2 have associative effects with octane
+        // CO2 have associative effects with Decane
         return true;
     }
 
@@ -124,16 +131,16 @@ public:
     ****************************************/
 
     //! \copydoc BaseFluidSystem::numComponents
-    static const int numComponents = 2;  // octane, co2
+    static const int numComponents = 2;  // Decane, co2
 
-    //! The component index of the oil; octane
-    static const int OctaneIdx = 0;
+    //! The component index of the oil; Decane
+    static const int DecaneIdx = 0;
 
     //! The component index of the solvent; co2
     static const int CO2Idx = 1;
 
     //! The component for pure oil
-    typedef Opm::Octane<Scalar> Octane;
+    typedef Opm::Decane<Scalar> Decane;
 
     //! The component for pure solvent
     typedef Opm::ChiwomsCO2<Scalar> CO2;
@@ -194,7 +201,7 @@ public:
     static const char* componentName(unsigned compIdx)
     {
             static const char* name[] = {
-                    Octane::name(),
+                    Decane::name(),
                     CO2::name()
             };
             assert(0 <= compIdx && compIdx < numComponents);
@@ -204,8 +211,8 @@ public:
     //! \copydoc BaseFluidSystem::molarMass
     static Scalar molarMass(unsigned compIdx)
     {
-        return (compIdx == OctaneIdx)
-            ? Octane::molarMass()
+        return (compIdx == DecaneIdx)
+            ? Decane::molarMass()
             : (compIdx == CO2Idx)
             ? CO2::molarMass()
             : throw std::invalid_argument("Molar mass component index");
@@ -218,8 +225,8 @@ public:
      */
     static Scalar criticalTemperature(unsigned compIdx)
     {
-            return (compIdx == OctaneIdx)
-                    ? Octane::criticalTemperature()
+            return (compIdx == DecaneIdx)
+                    ? Decane::criticalTemperature()
                     : (compIdx == CO2Idx)
                     ? CO2::criticalTemperature()
                     : throw std::invalid_argument("Critical temperature component index");
@@ -232,8 +239,8 @@ public:
      */
     static Scalar criticalPressure(unsigned compIdx)
     {
-            return (compIdx == OctaneIdx)
-                    ? Octane::criticalPressure()
+            return (compIdx == DecaneIdx)
+                    ? Decane::criticalPressure()
                     : (compIdx == CO2Idx)
                     ? CO2::criticalPressure()
                     : throw std::invalid_argument("Critical pressure component index");
@@ -241,8 +248,8 @@ public:
 
     static Scalar criticalDensity(unsigned compIdx)
     {
-        return (compIdx == OctaneIdx)
-                ? Octane::criticalDensity()
+        return (compIdx == DecaneIdx)
+                ? Decane::criticalDensity()
                 : (compIdx == CO2Idx)
                 ? CO2::criticalDensity()
                 : throw std::invalid_argument("Critical density component index");
@@ -255,8 +262,8 @@ public:
      */
     static Scalar acentricFactor(unsigned compIdx)
     {
-            return (compIdx == OctaneIdx)
-                    ? Octane::acentricFactor()
+            return (compIdx == DecaneIdx)
+                    ? Decane::acentricFactor()
                     : (compIdx == CO2Idx)
                     ? CO2::acentricFactor()
                     : throw std::invalid_argument("Molar mass component index");
@@ -290,21 +297,20 @@ public:
         //! \copydoc BaseFluidSystem::viscosity
         template <class FluidState, class LhsEval = typename FluidState::Scalar, class ParamCacheEval = LhsEval>
         static LhsEval viscosity(const FluidState& fluidState,
-                                 const ParameterCache<ParamCacheEval>& /*paramCache*/,
+                                 const ParameterCache<ParamCacheEval>& paramCache,
                                  unsigned phaseIdx)
         {
             assert(0 <= phaseIdx && phaseIdx < numPhases);
 
-            const auto& T = Opm::decay<LhsEval>(fluidState.temperature(phaseIdx));
-            const auto& p = Opm::decay<LhsEval>(fluidState.pressure(phaseIdx));
-            const auto& x = Opm::decay<LhsEval>(fluidState.moleFraction(phaseIdx, CO2Idx));
-
-            #warning We use constant viscosity. These needs to be checked
-            if(phaseIdx == oilPhaseIdx) {
-                return 5e-4; 
-            } else {
-                return 1e-5; 
-            }
+            //#warning We use constant viscosity. These needs to be checked
+            //#warning We use the same as for octane
+            //std::cout << x << " " << LBC(fluidState,paramCache,phaseIdx) << std::endl;
+            return LBC(fluidState,paramCache,phaseIdx);
+            //if(phaseIdx == oilPhaseIdx) {
+            //    return 5e-4;
+            //} else {
+            //    return 1e-5;
+            //}
         }
 
         //! \copydoc BaseFluidSystem::enthalpy
@@ -318,26 +324,6 @@ public:
             const auto& x = Opm::decay<LhsEval>(fluidState.moleFraction(phaseIdx, CO2Idx));
             throw std::runtime_error("We don't use the enthalpy for non-isothermal runs");
         }
-
-        // according to <https://srdata.nist.gov/solubility/sol_detail.aspx?sysID=38_103>
-        // the solubility of octane in aqueous phase is 2.0g/100g sln. since octane
-        // (C8H18) has a molecular weight of 114.23 g/mol and water (H2O) of 18.01528 g/mol
-        // we have a total of 2.0g/114.23 g/mol ~= 0.0175 mol of octane and
-        // (100g-2.0g)/18.01528 g/mol ~= 5.44 mol of water, for a total of 5.45 mol,
-        // of which the mole fraction of octane is 0.0175/5.45 ~= 3.2e-3
-        //constexpr static Scalar sol_aqueous_oil = 3.208e-3;  // solution of octane in brine
-
-        // the solubility of water in the oleic (octane) phase is according the same
-        // reference above, 7.3g/100g sln, giving 7.3g/18.01528 g/mol ~= 0.41 mol of
-        // water and (100g-7.3g)/114.23 g/mol ~= 0.81 mol of octane, in a 100 g solution,
-        // yielding a mole fraction of 0.41/(0.41 + 0.81) = 0.33 for water.
-        //constexpr static Scalar sol_oleic_water = sol_aqueous_oil; // 3.330e-1;
-
-        // partition coefficients when both oleic and aqueous phases are saturated with
-        // maximum dissoluted amount of the other component. these coefficients should
-        // give fugacities with maximum volatility of the component in its non-native phase
-        //constexpr static Scalar k_aqueous_oil = (1 - sol_oleic_water) / sol_aqueous_oil;  // ~200
-        //constexpr static Scalar k_oleic_water = (1 - sol_aqueous_oil) / sol_oleic_water;  // ~3
 
 
         //! \copydoc BaseFluidSystem::fugacityCoefficient
@@ -353,7 +339,8 @@ public:
             if (phaseIdx == oilPhaseIdx) {
 #if 1
 #warning HACK We use henry's law
-                if (compIdx == OctaneIdx)
+#warning Use value for octane
+                if (compIdx == DecaneIdx)
                     return 26.6e3/fluidState.pressure(oilPhaseIdx);
                 else
                 return 40e3/fluidState.pressure(oilPhaseIdx);
@@ -379,10 +366,15 @@ public:
         static LhsEval diffusionCoefficient(const FluidState& /*fluidState*/,
                                             const ParameterCache<ParamCacheEval>& /*paramCache*/,
                                             unsigned /*phaseIdx*/,
-                                            unsigned /*compIdx*/)
+                                            unsigned compIdx)
         {
-            // The diffusionCoefficient. Needs to be checked
-            return 1e-9; 
+            // The diffusionCoefficient. From  Cadogan, S. P., Mistry, B., Wong, Y. et al. (2016). Diffusion Coefficients of Carbon Dioxide in Eight Hydrocarbon Liquids at Temperatures between (298.15 and 423.15) K at Pressures up to 69 MPa. Journal of Chemical & Engineering Data 61 (11): 3922-3932. https://doi.org/10.1021/acs.jced.6b00691
+            // n-decane 6*e-9
+            // n-octane 7.44*e-9
+            if (compIdx == CO2Idx)
+                return 6.0e-9;
+
+            return 0.8e-9;
         }
 
     /*!
@@ -394,70 +386,71 @@ public:
     {
         unsigned i = std::min(comp1Idx, comp2Idx);
         unsigned j = std::max(comp1Idx, comp2Idx);
-        if (i == OctaneIdx && j == CO2Idx)
-            return 0.1089;
+        if (i == DecaneIdx && j == CO2Idx)
+            return 0.1032;
 
         return 0;
     }
 
-    static Scalar LBC(const FluidState& fluidState,
+    template <class FluidState, class LhsEval = typename FluidState::Scalar, class ParamCacheEval = LhsEval>
+    static LhsEval LBC(const FluidState& fluidState,
                       const ParameterCache<ParamCacheEval>& /*paramCache*/,
                       unsigned phaseIdx)
     {
         const Scalar MPa_atm = 0.101325;
-        const Scalar R = 8.3144598e-3;
+        const Scalar R = 8.3144598e-3;//Mj/kmol*K
         const auto& T = Opm::decay<LhsEval>(fluidState.temperature(phaseIdx));
         const auto& rho = Opm::decay<LhsEval>(fluidState.density(phaseIdx));
 
-        Scalar sumMm = 0.0;
-        Scalar sumVolume = 0.0;
+        LhsEval sumMm = 0.0;
+        LhsEval sumVolume = 0.0;
         for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
-            const Scalar& p_c = criticalPressure(compIdx);
+            const Scalar& p_c = criticalPressure(compIdx)/1e6; // in Mpa;
             const Scalar& T_c = criticalTemperature(compIdx);
-            const Scalar& Mm = molarMass(compIdx);
+            const Scalar Mm = molarMass(compIdx) * 1000; //in kg/kmol;
             const Scalar& rho_c = criticalDensity(compIdx);
             const auto& x = Opm::decay<LhsEval>(fluidState.moleFraction(phaseIdx, compIdx));
             const Scalar Z_c = p_c * Mm / (R *T_c*rho_c);
-            const Scalar v_c = R*Z_c*T_c/p_c;
+            const Scalar v_c = R*Z_c*T_c/p_c; //v_c = Mm/rho_c
             sumMm += x*Mm;
             sumVolume += x*v_c;
         }
 
-        Scalar rho_pc = sumMm/sumVolume;
-        Scalar rho_r = rho/rho_pc;
+        LhsEval rho_pc = sumMm/sumVolume;
+        LhsEval rho_r = rho/rho_pc;
 
 
-        Scalar xsum_T_c = 0.0;
-        Scalar xsum_Mm = 0.0;
-        Scalar xsum_p_ca = 0.0;
+        LhsEval xsum_T_c = 0.0;
+        LhsEval xsum_Mm = 0.0;
+        LhsEval xsum_p_ca = 0.0;
         for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
-            const Scalar& p_c = criticalPressure(compIdx);
+            const Scalar& p_c = criticalPressure(compIdx)/1e6; // in Mpa;
             const Scalar& T_c = criticalTemperature(compIdx);
-            const Scalar& Mm = molarMass(compIdx);
+            const Scalar Mm = molarMass(compIdx) * 1000; //in kg/kmol;
             const auto& x = Opm::decay<LhsEval>(fluidState.moleFraction(phaseIdx, compIdx));
             Scalar p_ca = p_c / MPa_atm;
             xsum_T_c += x*T_c;
             xsum_Mm += x*Mm;
             xsum_p_ca += x*p_ca;
         }
-        Scalar zeta_tot = std::pow(xsum_T_c / (std::pow(xsum_Mm,3) * std::pow(xsum_p_ca,4)),1/6);
+        LhsEval zeta_tot = Opm::pow(xsum_T_c / (Opm::pow(xsum_Mm,3.0) * Opm::pow(xsum_p_ca,4.0)),1./6);
 
-        Scalar my0 = 0.0;
-        Scalar sumxrM = 0.0;
+        LhsEval my0 = 0.0;
+        LhsEval sumxrM = 0.0;
         for (unsigned compIdx = 0; compIdx < numComponents; ++compIdx) {
-            const Scalar& p_c = criticalPressure(compIdx);
+            const Scalar& p_c = criticalPressure(compIdx)/1e6; // in Mpa;
             const Scalar& T_c = criticalTemperature(compIdx);
-            const Scalar& Mm = molarMass(compIdx);
+            const Scalar Mm = molarMass(compIdx) * 1000; //in kg/kmol;
             const auto& x = Opm::decay<LhsEval>(fluidState.moleFraction(phaseIdx, compIdx));
             Scalar p_ca = p_c / MPa_atm;
-            Scalar zeta = std::pow(T_c / (std::pow(Mm,3) * std::pow(p_ca,4)),1/6);
-            Scalar T_r = T/T_c;
-            Scalar xrM = x * std::pow(Mm,0.5);
-            Scalar mys = 0.0;
+            Scalar zeta = std::pow(T_c / (std::pow(Mm,3.0) * std::pow(p_ca,4.0)),1./6);
+            LhsEval T_r = T/T_c;
+            LhsEval xrM = x * std::pow(Mm,0.5);
+            LhsEval mys = 0.0;
             if (T_r <=1.5) {
-                mys = 34.0e-5*std::pow(T_r,0.94)/zeta;
+                mys = 34.0e-5*Opm::pow(T_r,0.94)/zeta;
             } else {
-                 mys = 17.78e-5*std::pow(4.58*T_r - 1.67, 0.625)/zeta;
+                mys = 17.78e-5*Opm::pow(4.58*T_r - 1.67, 0.625)/zeta;
             }
             my0 += xrM*mys;
             sumxrM += xrM;
@@ -470,15 +463,13 @@ public:
                                    -0.040758,  // trykkfeil i 1964-artikkel: -0.40758
                                    0.0093324};
 
-        Scalar sumLBC = 0.0;
+        LhsEval sumLBC = 0.0;
         for (int i = 0; i < 5; ++i) {
-            sumLBC += std::pow(rho_r,i)*LBC[i];
+            sumLBC += Opm::pow(rho_r,i)*LBC[i];
         }
 
-        return my0 + (std::pow(sumLBC,4.0) - 1e-4)/zeta_tot;
+        return (my0 + (Opm::pow(sumLBC,4.0) - 1e-4)/zeta_tot)/1e3; // mPas-> Pas
     }
-
-
 
 };
 

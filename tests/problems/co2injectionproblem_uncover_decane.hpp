@@ -89,8 +89,6 @@ NEW_PROP_TAG(Temperature);
 NEW_PROP_TAG(SimulationName);
 NEW_PROP_TAG(EpisodeLength);
 
-NEW_PROP_TAG(FluxOutputFileName);
-
 // Set the grid type
 #if HAVE_DUNE_ALUGRID
 // use dune-alugrid if available
@@ -117,7 +115,7 @@ private:
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
 
 public:
-    typedef Opm::TwoPhaseCo2OctaneFluidSystem<Scalar> type;
+    typedef Opm::TwoPhaseCo2DecaneFluidSystem<Scalar> type;
 };
 
 // Set the material Law
@@ -181,7 +179,7 @@ SET_INT_PROP(Co2InjectionBaseProblem, FluidSystemNumTemperature, 100);
 
 SET_SCALAR_PROP(Co2InjectionBaseProblem, MaxDepth, 1);
 SET_SCALAR_PROP(Co2InjectionBaseProblem, Temperature, 323.15);
-SET_STRING_PROP(Co2InjectionBaseProblem, SimulationName, "uncover");
+SET_STRING_PROP(Co2InjectionBaseProblem, SimulationName, "uncover_decane");
 
 // The default for the end time of the simulation is 2 hours
 SET_SCALAR_PROP(Co2InjectionBaseProblem, EndTime, 2*3600);
@@ -194,8 +192,6 @@ SET_STRING_PROP(Co2InjectionBaseProblem, GridFile, "data/co2injection.dgf");
 
 // write restart for every hour
 SET_SCALAR_PROP(Co2InjectionBaseProblem, EpisodeLength, 60. * 60.);
-
-SET_STRING_PROP(Co2InjectionBaseProblem, FluxOutputFileName, "uncover_swelling.txt");
 
 END_PROPERTIES
 
@@ -229,7 +225,7 @@ class Co2InjectionProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
     enum { oilPhaseIdx = FluidSystem::oilPhaseIdx };
     enum { CO2Idx = FluidSystem::CO2Idx };
-    enum { OctaneIdx = FluidSystem::OctaneIdx };
+    enum { DecaneIdx = FluidSystem::DecaneIdx };
     enum { conti0EqIdx = Indices::conti0EqIdx };
     enum { contiCO2EqIdx = conti0EqIdx + CO2Idx };
 
@@ -242,8 +238,6 @@ class Co2InjectionProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     typedef typename GET_PROP_TYPE(TypeTag, MaterialLawParams) MaterialLawParams;
     typedef typename GET_PROP_TYPE(TypeTag, ThermalConductionLaw) ThermalConductionLaw;
     typedef typename GET_PROP_TYPE(TypeTag, SolidEnergyLawParams) SolidEnergyLawParams;
-    typedef typename GridView::template Codim<0>::Entity Element;
-    typedef typename GET_PROP_TYPE(TypeTag, ElementContext) ElementContext;
     typedef typename ThermalConductionLaw::Params ThermalConductionLawParams;
 
     typedef Opm::MathToolbox<Evaluation> Toolbox;
@@ -284,33 +278,26 @@ public:
 
         maxDepth_ = EWOMS_GET_PARAM(TypeTag, Scalar, MaxDepth);
         temperature_ = EWOMS_GET_PARAM(TypeTag, Scalar, Temperature);
-        outputFileName_ = EWOMS_GET_PARAM(TypeTag, std::string, FluxOutputFileName);
-        
 
         // initialize the tables of the fluid system
         FluidSystem::init();
 
         // intrinsic permeabilities
-        //Scalar perm = 76*10; //in darcy
-        Scalar perm = 76; //in darcy
-        K_ = this->toDimMatrix_(perm * 9.8692 * 1e-13);
+        K_ = this->toDimMatrix_(76 * 9.8692 * 1e-13);
 		
-        //K_ = this->toDimMatrix_(2.11e3 * 9.8692 * 1e-13);
+		//K_ = this->toDimMatrix_(2.11e3 * 9.8692 * 1e-13);
         // impermeable at the outside of the domain
-        KK_ = this->toDimMatrix_(perm * 9.8692 * 1e-13 * 1e-6);
+        KK_ = this->toDimMatrix_(76 * 9.8692 * 1e-13 * 1e-3);
 
 
         // porosities
         size_t numDof = this->model().numGridDof();
-
         //porosity_.resize(numDof,0.4);
-        porosity_.resize(numDof,0.4);
-
+		porosity_.resize(numDof,0.4);
         //some noise to generate fingers
         for (size_t i = 0; i < numDof; ++i) {
             double noise = this->norm_dist(this->rand_gen);
             porosity_[i] += 10 * noise;
-            porosity_[i] = std::min(porosity_[i], 1.0);
         }
 
         molEps_.resize(numDof, 0.0);
@@ -319,13 +306,11 @@ public:
             molEps_[i] += noise;
         }
 
-        oilFluxes_.resize(numDof, 0.0);
-        gasFluxes_.resize(numDof, 0.0);
-        fluxesTotals_.resize(4,0.0);
-        std::ofstream myfile;
-        myfile.open (outputFileName_);
-        myfile << "time - octane mol rate - CO2 mol rate - neg-octane mol rate - neg-CO2 mol rate -  octane mol total - CO2 mol total - neg-octane mol total - neg-CO2 mol total \n";
-        myfile.close();
+		oilFluxes_.resize(numDof, 0.0);
+		std::ofstream myfile;
+		myfile.open ("example.txt");
+		myfile << "time - oil phase volume rate \n";
+		myfile.close();
 
         // residual saturations
         materialParams_.setResidualSaturation(oilPhaseIdx, 0.2);
@@ -380,9 +365,6 @@ public:
                              "files");
         EWOMS_REGISTER_PARAM(TypeTag, Scalar, EpisodeLength,
                              "Time interval [s] for episode length");
-                             
-        EWOMS_REGISTER_PARAM(TypeTag, std::string, FluxOutputFileName,
-                             "Name of the output file for where the out flux is stored");
     }
 
     /*!
@@ -455,79 +437,18 @@ public:
                       << " gas=[" << storageG << "]\n" << std::flush;
         }
 #endif // NDEBUG
-        Scalar avg_density=0.0;
-        Scalar totalPV = 0.0;
-        const auto& simulator = this->simulator();
-        ElementContext elemCtx(simulator);
-        const auto& vanguard = simulator.vanguard();
-        auto elemIt = vanguard.gridView().template begin</*codim=*/0>();
-        const auto& elemEndIt = vanguard.gridView().template end</*codim=*/0>();
-        for (; elemIt != elemEndIt; ++elemIt) {
-            const Element& elem = *elemIt;
 
-            elemCtx.updatePrimaryStencil(elem);
-
-            const auto& pos = elemCtx.pos(/*spaceIdx=*/0, /*timeIdx=*/0);
-            if (!inCircle_(pos)) {
-                continue;
-            }
-
-            elemCtx.updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
-            const auto& iq = elemCtx.intensiveQuantities(/*spaceIdx=*/0, /*timeIdx=*/0);
-            const auto& fs = iq.fluidState();
-            //assume all porosity and volumes are the same;
-            avg_density += Opm::getValue(fs.density(oilPhaseIdx));
-            totalPV += 1.0;
-        }
-
-        this->gridView().comm().sum(totalPV);
-        this->gridView().comm().sum(avg_density);
-
-        avg_density/=totalPV;
-
-        Scalar oilFluxInn = 0.0;
-        Scalar gasFluxInn = 0.0;
-        Scalar oilFlux = 0.0;
-        Scalar gasFlux = 0.0;
-        for (int i = 0; i < oilFluxes_.size(); ++i)
-        {
-            if (oilFluxes_[i] < 0)
-                oilFluxInn += oilFluxes_[i];
-            else
-                oilFlux += oilFluxes_[i];
-        }
-        for (int i = 0; i < gasFluxes_.size(); ++i)
-        {
-            if (gasFluxes_[i] < 0)
-                gasFluxInn += gasFluxes_[i];
-            else
-                gasFlux += gasFluxes_[i];
-        }
-
-        this->gridView().comm().sum(oilFluxInn);
-        this->gridView().comm().sum(gasFluxInn);
-        this->gridView().comm().sum(oilFlux);
-        this->gridView().comm().sum(gasFlux);
-
-        oilFlux*=this->simulator().timeStepSize();
-        gasFlux*=this->simulator().timeStepSize();
-        oilFluxInn*=this->simulator().timeStepSize();
-        gasFluxInn*=this->simulator().timeStepSize();
-        fluxesTotals_[0] += oilFlux;
-        fluxesTotals_[1] += gasFlux;
-        fluxesTotals_[2] += oilFluxInn;
-        fluxesTotals_[3] += gasFluxInn;
-
-        if (this->gridView().comm().rank() == 0) {
-            std::ofstream myfile;
-            myfile.open (outputFileName_, std::ios_base::app);
-            myfile << std::to_string(this->simulator().time()) << " "
-                   << std::to_string(oilFlux) << " " << std::to_string(gasFlux) << " "
-                   << std::to_string(oilFluxInn) << " " << std::to_string(gasFluxInn) << " "
-                   << std::to_string(fluxesTotals_[0]) << " " << std::to_string(fluxesTotals_[1]) << " "
-                   << std::to_string(fluxesTotals_[2]) << " " << std::to_string(fluxesTotals_[3]) << " " << avg_density << "\n";
-            myfile.close();
-        }
+		Scalar oilFlux = 0.0;
+		for (int i = 0; i < oilFluxes_.size(); ++i)
+		{
+			oilFlux += oilFluxes_[i];
+		}
+		std::ofstream myfile;
+		myfile.open ("example.txt", std::ios_base::app);
+		myfile << std::to_string(this->simulator().time()) << " " << std::to_string(oilFlux * this->simulator().timeStepSize()) <<"\n";
+		myfile.close();
+		std::cout << this->simulator().time() << " " << oilFlux * this->simulator().timeStepSize() << std::endl;
+		//std::cout << gasFlux_ * this->simulator().timeStepSize() << std::endl;
     }
 
     /// Constant temperature
@@ -651,12 +572,12 @@ public:
             unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
 
             //Scalar tmp = 0.9 + 1*molEps_[globalSpaceIdx];
-            Scalar min_mol_frac = 0.7; // 1.2e-2;
-            min_mol_frac = std::min(min_mol_frac, min_mol_frac * (1.0 + molEps_[globalSpaceIdx]));
+            Scalar min_mol_frac = 0.4; // 1.2e-2;
+            //min_mol_frac = std::min(min_mol_frac, min_mol_frac * (1.0 + molEps_[globalSpaceIdx]));
             min_mol_frac = min_mol_frac * (1.0 + molEps_[globalSpaceIdx]);
 
             fs.setMoleFraction(oilPhaseIdx, CO2Idx, min_mol_frac);
-            fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
+            fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
                                1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
 
             typename FluidSystem::template ParameterCache<Scalar> paramCache;
@@ -671,18 +592,13 @@ public:
             // impose an freeflow boundary condition
             values.setFreeFlow(context, spaceIdx, timeIdx, fs);
             
-            //std::cout << fs.molarity(oilPhaseIdx, CO2Idx) << " " << fs.molarity(oilPhaseIdx, OctaneIdx) << std::endl;
             // Some output
             //std::cout << globalSpaceIdx << " " << pos[0] << " " << pos[1] << std::endl;
-            //for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
-            //    //std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(oilPhaseIdx, compIdx) << std::endl;
-			//	oilFluxes_[globalSpaceIdx] = Opm::getValue(values[OctaneIdx]/fs.molarity(oilPhaseIdx, OctaneIdx));
-			//	//gasFlux_ += Opm::getValue(values[CO2Idx]);				
-            //}
-
-            gasFluxes_[globalSpaceIdx] = Opm::getValue(values[CO2Idx]); ///fs.molarity(oilPhaseIdx, CO2Idx));
-            oilFluxes_[globalSpaceIdx] = Opm::getValue(values[OctaneIdx]); ///fs.molarity(oilPhaseIdx, OctaneIdx));
-
+            for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
+                //std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(oilPhaseIdx, compIdx) << std::endl;
+                                oilFluxes_[globalSpaceIdx] = Opm::getValue(values[DecaneIdx]/fs.molarity(oilPhaseIdx, DecaneIdx));
+				//gasFlux_ += Opm::getValue(values[CO2Idx]);				
+            }
         }
         else
             // no flow on top and bottom
@@ -756,12 +672,8 @@ private:
         //////
         // set composition of the liquid phase
         //////
-        //Scalar co2molfrac = 0.99999;
-        //if (depth < 0.05)
-        //    co2molfrac = 0.00001;
-        Scalar co2molfrac = 0.00001;
-        fs.setMoleFraction(oilPhaseIdx, CO2Idx, co2molfrac);
-        fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
+        fs.setMoleFraction(oilPhaseIdx, CO2Idx, 0.00001);
+        fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
                            1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
 
         typename FluidSystem::template ParameterCache<Scalar> paramCache;
@@ -802,10 +714,9 @@ private:
     DimMatrix KK_;
     std::vector<Scalar> porosity_;
     std::vector<Scalar> molEps_;
-
-    mutable std::vector<Scalar> fluxesTotals_;
-    mutable std::vector<Scalar> oilFluxes_;
-    mutable std::vector<Scalar> gasFluxes_;
+	
+	mutable std::vector<Scalar> oilFluxes_;
+	//mutable Scalar gasFlux_;
 
     MaterialLawParams materialParams_;
 
@@ -822,8 +733,6 @@ private:
 
     Scalar pressureLow_, pressureHigh_;
     Scalar temperatureLow_, temperatureHigh_;
-    
-    std::string outputFileName_;
 
     mutable std::mt19937 rand_gen;
     mutable std::normal_distribution<double> norm_dist{0., 1e-4 / 3.};

@@ -42,7 +42,7 @@
 #include <opm/material/thermal/ConstantSolidHeatCapLaw.hpp>
 #include <opm/material/common/UniformTabulated2DFunction.hpp>
 #include <opm/material/common/Unused.hpp>
-#include "twophasefluidsystem.hh"
+#include "twophasefluidsystemDecane.hpp"
 
 #if HAVE_DUNE_ALUGRID
 #include <dune/alugrid/grid.hh>
@@ -117,7 +117,7 @@ private:
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
 
 public:
-    typedef Opm::TwoPhaseCo2OctaneFluidSystem<Scalar> type;
+    typedef Opm::TwoPhaseCo2DecaneFluidSystem<Scalar> type;
 };
 
 // Set the material Law
@@ -181,16 +181,16 @@ SET_INT_PROP(Co2InjectionBaseProblem, FluidSystemNumTemperature, 100);
 
 SET_SCALAR_PROP(Co2InjectionBaseProblem, MaxDepth, 1);
 SET_SCALAR_PROP(Co2InjectionBaseProblem, Temperature, 323.15);
-SET_STRING_PROP(Co2InjectionBaseProblem, SimulationName, "uncover");
+SET_STRING_PROP(Co2InjectionBaseProblem, SimulationName, "uncover_circle_decane");
 
-// The default for the end time of the simulation is 2 hours
-SET_SCALAR_PROP(Co2InjectionBaseProblem, EndTime, 2*3600);
+// The default for the end time of the simulation is 12 hours
+SET_SCALAR_PROP(Co2InjectionBaseProblem, EndTime, 12*3600);
 
 // The default for the initial time step size of the simulation
 SET_SCALAR_PROP(Co2InjectionBaseProblem, InitialTimeStepSize, 1e-3);
 
 // The default DGF file to load
-SET_STRING_PROP(Co2InjectionBaseProblem, GridFile, "data/co2injection.dgf");
+SET_STRING_PROP(Co2InjectionBaseProblem, GridFile, "data/co2injectionBox.dgf");
 
 // write restart for every hour
 SET_SCALAR_PROP(Co2InjectionBaseProblem, EpisodeLength, 60. * 60.);
@@ -204,7 +204,7 @@ namespace Opm {
 /*!
  * \ingroup TestProblems
  *
- * \brief Problem where \f$CO_2\f$ is mixing in octane 
+ * \brief Problem where \f$CO_2\f$ is mixing in Decane
  * The domain is a sized 0.2m times 0.1m and consists of a permeable homogenious porous media
  * within the half-circle and inpermable on the outside of the half-circle
  * \f$CO_2\f$ gets injected by means of a diffusion at the top boundary 
@@ -229,7 +229,7 @@ class Co2InjectionProblem : public GET_PROP_TYPE(TypeTag, BaseProblem)
     enum { gasPhaseIdx = FluidSystem::gasPhaseIdx };
     enum { oilPhaseIdx = FluidSystem::oilPhaseIdx };
     enum { CO2Idx = FluidSystem::CO2Idx };
-    enum { OctaneIdx = FluidSystem::OctaneIdx };
+    enum { DecaneIdx = FluidSystem::DecaneIdx };
     enum { conti0EqIdx = Indices::conti0EqIdx };
     enum { contiCO2EqIdx = conti0EqIdx + CO2Idx };
 
@@ -319,14 +319,6 @@ public:
             molEps_[i] += noise;
         }
 
-        oilFluxes_.resize(numDof, 0.0);
-        gasFluxes_.resize(numDof, 0.0);
-        fluxesTotals_.resize(4,0.0);
-        std::ofstream myfile;
-        myfile.open (outputFileName_);
-        myfile << "time - octane mol rate - CO2 mol rate - neg-octane mol rate - neg-CO2 mol rate -  octane mol total - CO2 mol total - neg-octane mol total - neg-CO2 mol total \n";
-        myfile.close();
-
         // residual saturations
         materialParams_.setResidualSaturation(oilPhaseIdx, 0.2);
         materialParams_.setResidualSaturation(gasPhaseIdx, 0.0);
@@ -341,6 +333,50 @@ public:
         solidEnergyLawParams_.setSolidHeatCapacity(790.0 // specific heat capacity of granite [J / (kg K)]
                                                    * 2700.0); // density of granite [kg/m^3]
         solidEnergyLawParams_.finalize();
+
+        std::ofstream myfile;
+        myfile.open (outputFileName_);
+        myfile << "time - total porosity \n";
+        myfile.close();
+
+//        if (this->gridView().comm().rank() == 0) {
+//            int n = 100;
+//            for (int i = 0; i <(n+1); i++) {
+//                Opm::CompositionalFluidState<Scalar, FluidSystem> fs;
+
+//                //////
+//                // set temperature
+//                //////
+//                fs.setTemperature(323.15);
+
+//                //////
+//                // set saturations
+//                //////
+//                fs.setSaturation(FluidSystem::oilPhaseIdx, 1.0);
+//                fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
+
+//                fs.setPressure(oilPhaseIdx, pressure_);
+//                fs.setPressure(gasPhaseIdx, pressure_);
+
+//                //////
+//                // set composition of the liquid phase
+//                //////
+//                Scalar x = i*1.0/n;
+//                fs.setMoleFraction(oilPhaseIdx, CO2Idx, x);
+//                fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
+//                                   1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
+
+//                typename FluidSystem::template ParameterCache<Scalar> paramCache;
+//                typedef Opm::ComputeFromReferencePhase<Scalar, FluidSystem> CFRP;
+//                CFRP::solve(fs, paramCache,
+//                            /*refPhaseIdx=*/oilPhaseIdx,
+//                            /*setViscosity=*/true,
+//                            /*setEnthalpy=*/false);
+
+//                fs.checkDefined();
+//                std::cout << fs.moleFraction(oilPhaseIdx, CO2Idx) << " " << fs.density(oilPhaseIdx) << std::endl;
+//            }
+//        }
 
     }
 
@@ -455,8 +491,9 @@ public:
                       << " gas=[" << storageG << "]\n" << std::flush;
         }
 #endif // NDEBUG
-        Scalar avg_density=0.0;
+
         Scalar totalPV = 0.0;
+        Scalar totalPV2 = 0.0;
         const auto& simulator = this->simulator();
         ElementContext elemCtx(simulator);
         const auto& vanguard = simulator.vanguard();
@@ -475,57 +512,27 @@ public:
             elemCtx.updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
             const auto& iq = elemCtx.intensiveQuantities(/*spaceIdx=*/0, /*timeIdx=*/0);
             const auto& fs = iq.fluidState();
-            //assume all porosity and volumes are the same;
-            avg_density += Opm::getValue(fs.density(oilPhaseIdx));
-            totalPV += 1.0;
+
+            if (fs.moleFraction(oilPhaseIdx, CO2Idx) > 0.90)
+                continue;
+
+            totalPV2 += Opm::getValue(iq.porosity());
+
+            if (fs.moleFraction(oilPhaseIdx, CO2Idx) > 0.99)
+                continue;
+
+            //sum porosities (assumes all volumes are the same)
+            totalPV += Opm::getValue(iq.porosity());
         }
 
         this->gridView().comm().sum(totalPV);
-        this->gridView().comm().sum(avg_density);
-
-        avg_density/=totalPV;
-
-        Scalar oilFluxInn = 0.0;
-        Scalar gasFluxInn = 0.0;
-        Scalar oilFlux = 0.0;
-        Scalar gasFlux = 0.0;
-        for (int i = 0; i < oilFluxes_.size(); ++i)
-        {
-            if (oilFluxes_[i] < 0)
-                oilFluxInn += oilFluxes_[i];
-            else
-                oilFlux += oilFluxes_[i];
-        }
-        for (int i = 0; i < gasFluxes_.size(); ++i)
-        {
-            if (gasFluxes_[i] < 0)
-                gasFluxInn += gasFluxes_[i];
-            else
-                gasFlux += gasFluxes_[i];
-        }
-
-        this->gridView().comm().sum(oilFluxInn);
-        this->gridView().comm().sum(gasFluxInn);
-        this->gridView().comm().sum(oilFlux);
-        this->gridView().comm().sum(gasFlux);
-
-        oilFlux*=this->simulator().timeStepSize();
-        gasFlux*=this->simulator().timeStepSize();
-        oilFluxInn*=this->simulator().timeStepSize();
-        gasFluxInn*=this->simulator().timeStepSize();
-        fluxesTotals_[0] += oilFlux;
-        fluxesTotals_[1] += gasFlux;
-        fluxesTotals_[2] += oilFluxInn;
-        fluxesTotals_[3] += gasFluxInn;
+        this->gridView().comm().sum(totalPV2);
 
         if (this->gridView().comm().rank() == 0) {
             std::ofstream myfile;
             myfile.open (outputFileName_, std::ios_base::app);
             myfile << std::to_string(this->simulator().time()) << " "
-                   << std::to_string(oilFlux) << " " << std::to_string(gasFlux) << " "
-                   << std::to_string(oilFluxInn) << " " << std::to_string(gasFluxInn) << " "
-                   << std::to_string(fluxesTotals_[0]) << " " << std::to_string(fluxesTotals_[1]) << " "
-                   << std::to_string(fluxesTotals_[2]) << " " << std::to_string(fluxesTotals_[3]) << " " << avg_density << "\n";
+                   << std::to_string(totalPV) << " " << std::to_string(totalPV2) <<"\n";
             myfile.close();
         }
     }
@@ -561,7 +568,12 @@ public:
         if (!inCircle_(pos)) {
             return 1e-6;
         } else {
+
             unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
+
+            //if(onTopCircle_(pos))
+            //    return std::min(1.0, porosity_[globalSpaceIdx] + 0.59); //make it close to 1.0 (0.4+0.6)
+
             return porosity_[globalSpaceIdx];
         }
     }
@@ -618,6 +630,7 @@ public:
     {
         const auto& pos = context.pos(spaceIdx, timeIdx);
         if (onTop_(pos)) {
+            //std::cout << "boundary " << pos[0] << " " << pos[1] << std::endl;
             Opm::CompositionalFluidState<Scalar, FluidSystem> fs;
             const GlobalPosition& pos = context.pos(spaceIdx, timeIdx);
 
@@ -632,31 +645,24 @@ public:
             fs.setSaturation(FluidSystem::oilPhaseIdx, 1.0);
             fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
 
-            // The density of octane at (p = 150 bar, T=50C)
-            Scalar densityL = 670; 
-
-            Scalar depth = pos[dim - 1];
-            Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
-
             Scalar pC[numPhases];
             const auto& matParams = this->materialLawParams(context, spaceIdx, timeIdx);
             MaterialLaw::capillaryPressures(pC, matParams, fs);
 
+            // The density of Decane at (p = 150 bar, T=50C)
+            Scalar densityL = 669.979;
+            Scalar densityG = 417.784;
+
+            Scalar depth = pos[dim - 1] - 0.1; //depth in gas zone
+            Scalar pl = pressure_ + this->gravity()[dim - 1] * ( densityG * depth + densityL * 0.1);
             fs.setPressure(oilPhaseIdx, pl + (pC[oilPhaseIdx] - pC[oilPhaseIdx]));
             fs.setPressure(gasPhaseIdx, pl + (pC[gasPhaseIdx] - pC[oilPhaseIdx]));
 
             //////
             // set composition of the liquid phase
             //////
-            unsigned globalSpaceIdx = context.globalSpaceIndex(spaceIdx, timeIdx);
-
-            //Scalar tmp = 0.9 + 1*molEps_[globalSpaceIdx];
-            Scalar min_mol_frac = 0.7; // 1.2e-2;
-            min_mol_frac = std::min(min_mol_frac, min_mol_frac * (1.0 + molEps_[globalSpaceIdx]));
-            min_mol_frac = min_mol_frac * (1.0 + molEps_[globalSpaceIdx]);
-
-            fs.setMoleFraction(oilPhaseIdx, CO2Idx, min_mol_frac);
-            fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
+            fs.setMoleFraction(oilPhaseIdx, CO2Idx, 1.0);
+            fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
                                1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
 
             typename FluidSystem::template ParameterCache<Scalar> paramCache;
@@ -670,19 +676,6 @@ public:
 
             // impose an freeflow boundary condition
             values.setFreeFlow(context, spaceIdx, timeIdx, fs);
-            
-            //std::cout << fs.molarity(oilPhaseIdx, CO2Idx) << " " << fs.molarity(oilPhaseIdx, OctaneIdx) << std::endl;
-            // Some output
-            //std::cout << globalSpaceIdx << " " << pos[0] << " " << pos[1] << std::endl;
-            //for (unsigned compIdx = 0; compIdx < 2; ++compIdx) {
-            //    //std::cout  << compIdx << " " << values[compIdx] << " " <<fs.moleFraction(oilPhaseIdx, compIdx) << std::endl;
-			//	oilFluxes_[globalSpaceIdx] = Opm::getValue(values[OctaneIdx]/fs.molarity(oilPhaseIdx, OctaneIdx));
-			//	//gasFlux_ += Opm::getValue(values[CO2Idx]);				
-            //}
-
-            gasFluxes_[globalSpaceIdx] = Opm::getValue(values[CO2Idx]); ///fs.molarity(oilPhaseIdx, CO2Idx));
-            oilFluxes_[globalSpaceIdx] = Opm::getValue(values[OctaneIdx]); ///fs.molarity(oilPhaseIdx, OctaneIdx));
-
         }
         else
             // no flow on top and bottom
@@ -699,10 +692,10 @@ public:
         Opm::CompositionalFluidState<Scalar, FluidSystem> fs;
         initialFluidState_(fs, context, spaceIdx, timeIdx);
 
-        // const auto& matParams = this->materialLawParams(context, spaceIdx,
-        // timeIdx);
-        // values.assignMassConservative(fs, matParams, /*inEquilibrium=*/true);
-        values.assignNaive(fs);
+        const auto& matParams = this->materialLawParams(context, spaceIdx,
+        timeIdx);
+        values.assignMassConservative(fs, matParams, /*inEquilibrium=*/true);
+        //values.assignNaive(fs);
     }
 
     /*!
@@ -727,6 +720,54 @@ private:
     {
         const GlobalPosition& pos = context.pos(spaceIdx, timeIdx);
 
+        if (onTopCircle_(pos)) {
+            //////
+            // set temperature
+            //////
+            fs.setTemperature(temperature(context, spaceIdx, timeIdx));
+
+            //////
+            // set saturations
+            //////
+            fs.setSaturation(FluidSystem::oilPhaseIdx, 1.0);
+            fs.setSaturation(FluidSystem::gasPhaseIdx, 0.0);
+
+            //////
+            // set pressures
+            //////
+            Scalar pC[numPhases];
+            const auto& matParams = this->materialLawParams(context, spaceIdx, timeIdx);
+            MaterialLaw::capillaryPressures(pC, matParams, fs);
+
+            // The density of Decane and CO2 at (p = 150 bar, T=50C)
+            Scalar densityL = 669.979;
+            Scalar densityG = 417.784;
+
+            Scalar depth = pos[dim - 1] - 0.1; //depth in gas zone
+            Scalar pl = pressure_ + this->gravity()[dim - 1] * ( densityG * depth + densityL * 0.1);
+            fs.setPressure(oilPhaseIdx, pl + (pC[oilPhaseIdx] - pC[oilPhaseIdx]));
+            fs.setPressure(gasPhaseIdx, pl + (pC[gasPhaseIdx] - pC[oilPhaseIdx]));
+
+            //////
+            // set composition of the liquid phase
+            //////
+            //Scalar co2molfrac = 0.99999;
+            //if (depth < 0.05)
+            //    co2molfrac = 0.00001;
+            Scalar co2molfrac = 1.0 - 0.001;
+            fs.setMoleFraction(oilPhaseIdx, CO2Idx, co2molfrac);
+            fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
+                               1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
+
+            typename FluidSystem::template ParameterCache<Scalar> paramCache;
+            typedef Opm::ComputeFromReferencePhase<Scalar, FluidSystem> CFRP;
+            CFRP::solve(fs, paramCache,
+                        /*refPhaseIdx=*/oilPhaseIdx,
+                        /*setViscosity=*/true,
+                        /*setEnthalpy=*/false);
+            return;
+        }
+
         //////
         // set temperature
         //////
@@ -744,9 +785,11 @@ private:
         Scalar pC[numPhases];
         const auto& matParams = this->materialLawParams(context, spaceIdx, timeIdx);
         MaterialLaw::capillaryPressures(pC, matParams, fs);
-        
-        // The density of octane at (p = 150 bar, T=50C)
-        Scalar densityL = 670; 
+
+
+        // The density of Decane and CO2 at (p = 150 bar, T=50C)
+        Scalar densityL = 669.979;
+        Scalar densityG = 417.784;
 
         Scalar depth = pos[dim - 1];
         Scalar pl = pressure_ + densityL * this->gravity()[dim - 1] * depth;
@@ -759,9 +802,9 @@ private:
         //Scalar co2molfrac = 0.99999;
         //if (depth < 0.05)
         //    co2molfrac = 0.00001;
-        Scalar co2molfrac = 0.00001;
+        Scalar co2molfrac = 0.001;
         fs.setMoleFraction(oilPhaseIdx, CO2Idx, co2molfrac);
-        fs.setMoleFraction(oilPhaseIdx, OctaneIdx,
+        fs.setMoleFraction(oilPhaseIdx, DecaneIdx,
                            1.0 - fs.moleFraction(oilPhaseIdx, CO2Idx));
 
         typename FluidSystem::template ParameterCache<Scalar> paramCache;
@@ -771,19 +814,29 @@ private:
                     /*setViscosity=*/true,
                     /*setEnthalpy=*/false);
     }
-    bool onTopCell_(const GlobalPosition& pos) const
-    { return pos[1] > 0.1 - eps_; }
+    bool onTopCircle_(const GlobalPosition& pos) const
+    { return pos[1] > 0.1; }
 
     bool onTop_(const GlobalPosition& pos) const
-    { return pos[1] > 0.1 - eps_*0.01; }
+    { return pos[1] > 0.2 - eps_*0.001; }
 
-    bool inCircle_(const GlobalPosition& pos) const
+    bool inCircle_(const GlobalPosition& pos, bool boundary=false) const
     {
-        //return true; // change this to always return true if you want square
+        if (false)
+            return true; // change this to always return true if you want square
+
         const std::vector<Scalar> origo = {0.1,0.1};
-        return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < 0.01;
+        Scalar radius2 = 0.01;
+        if (boundary) {
+            radius2 += eps_*.001;
+            //std::cout << ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) << std::endl;
+        }
+
+
+
+        return ((pos[0]-origo[0])*(pos[0]-origo[0]) + (pos[1]-origo[1])*(pos[1]-origo[1]) ) < radius2;
     }
-    
+
     void computeThermalCondParams_(ThermalConductionLawParams& params, Scalar poro)
     {
         Scalar lambdaWater = 0.6;

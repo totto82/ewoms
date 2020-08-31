@@ -32,7 +32,9 @@
 #include <opm/models/discretization/ecfv/ecfvdiscretization.hh>
 
 //#include "problems/co2injectionproblem.hh"
-#include "problems/co2injectionproblem_uncover_octane.hh"
+#include "problems/co2injectionproblem_uncover_decane_circle.hpp"
+//#include "problems/co2injectionproblem_uncover_decane.hh"
+
 
 BEGIN_PROPERTIES
 
