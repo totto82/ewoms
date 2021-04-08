@@ -86,7 +86,8 @@ class BlackOilPrimaryVariables : public FvBasePrimaryVariables<TypeTag>
     enum { pressureSwitchIdx = Indices::pressureSwitchIdx };
     enum { compositionSwitchIdx = Indices::compositionSwitchIdx };
 
-    static const bool compositionSwitchEnabled = Indices::gasEnabled;
+    //static const bool compositionSwitchEnabled = Indices::gasEnabled;
+    static const bool compositionSwitchEnabled = false; //hack pjpe
     static const bool waterEnabled = Indices::waterEnabled;
 
     // phase indices from the fluid system
@@ -315,7 +316,12 @@ public:
         else if (primaryVarsMeaning() == Sw_po_Sg) {
             if (waterEnabled)
                 (*this)[waterSaturationIdx] = FsToolbox::value(fluidState.saturation(waterPhaseIdx));
-            (*this)[pressureSwitchIdx] = FsToolbox::value(fluidState.pressure(oilPhaseIdx));
+            if (gasPresent && FluidSystem::numActivePhases() == 2){    
+                (*this)[pressureSwitchIdx] = FsToolbox::value(fluidState.pressure(gasPhaseIdx));
+            }
+            else if (oilPresent){
+                (*this)[pressureSwitchIdx] = FsToolbox::value(fluidState.pressure(oilPhaseIdx));
+            }
             if( compositionSwitchEnabled )
                 (*this)[compositionSwitchIdx] = FsToolbox::value(fluidState.saturation(gasPhaseIdx));
         }
@@ -391,6 +397,8 @@ public:
             Scalar Sg = 0.0;
             if (compositionSwitchEnabled)
                 Sg = (*this)[Indices::compositionSwitchIdx];
+            
+            Sg = 1.0 - Sw; //hack fr gas-water, looks not necessary
 
             Scalar So = 1.0 - Sw - Sg - solventSaturation_();
 
