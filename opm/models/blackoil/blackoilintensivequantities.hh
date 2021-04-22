@@ -96,7 +96,7 @@ class BlackOilIntensiveQuantities
     enum { dimWorld = GridView::dimensionworld };
     enum { compositionSwitchIdx = Indices::compositionSwitchIdx };
 
-    static const bool compositionSwitchEnabled = Indices::gasEnabled;
+    static const bool compositionSwitchEnabled = Indices::compositionSwitchIdx >= 0;
     //static const bool compositionSwitchEnabled = true; //for testing
     static const bool waterEnabled = Indices::waterEnabled;
     static const bool gasEnabled = Indices::gasEnabled;
